@@ -10,7 +10,6 @@ export const MAX_NOTES = 20;
 
 const SETTINGS_KEY = 'en_settings';
 const STORE_URL_KEY = 'en_notestore_url';
-const LEGACY_NOTES_KEY = 'en_notes';
 const DB_NAME = 'enpwa';
 
 export interface Settings {
@@ -71,9 +70,8 @@ function readAllNotes(d: IDBDatabase): Promise<NoteRecord[]> {
 }
 
 /**
- * Must complete before anything reads notes. Falls back to memory-only when
- * IndexedDB is unavailable, and migrates the pre-0.4.0 localStorage cache
- * (including unsynced edits) exactly once.
+ * Must complete before anything reads notes. Falls back to memory-only
+ * when IndexedDB is unavailable.
  */
 export async function initStore(): Promise<void> {
 	try {
@@ -82,15 +80,6 @@ export async function initStore(): Promise<void> {
 		db = null;
 	}
 	notes = db ? await readAllNotes(db) : [];
-	if (!notes.length) {
-		notes = readJson<NoteRecord[]>(LEGACY_NOTES_KEY, []);
-		if (notes.length) persistAll();
-	}
-	try {
-		localStorage.removeItem(LEGACY_NOTES_KEY);
-	} catch {
-		// storage may be unavailable; the in-memory copy still works
-	}
 }
 
 function persistAll(): void {

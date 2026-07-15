@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import {
 	applyCreatedGuid,
 	createLocalNote,
@@ -12,36 +12,16 @@ import {
 } from '../src/store';
 import type { NoteRecord } from '../src/store';
 
-// no indexedDB in the node test environment: the store runs memory-only,
-// which is exactly the fallback path it must support anyway
-function stubLocalStorage(seed: Record<string, string> = {}): Map<string, string> {
-	const m = new Map<string, string>(Object.entries(seed));
-	vi.stubGlobal('localStorage', {
-		getItem: (k: string) => m.get(k) ?? null,
-		setItem: (k: string, v: string) => void m.set(k, String(v)),
-		removeItem: (k: string) => void m.delete(k),
-	});
-	return m;
-}
-
 beforeEach(() => saveNotes([]));
-afterEach(() => vi.unstubAllGlobals());
 
 function rec(guid: string, patch: Partial<NoteRecord> = {}): NoteRecord {
 	return { guid, title: 't-' + guid, updated: 100, enml: '<en-note/>', dirty: false, ...patch };
 }
 
 describe('initStore', () => {
-	it('migrates the legacy localStorage cache, keeping unsynced edits', async () => {
-		const legacy = [rec('a', { dirty: true, enml: '<en-note>pending</en-note>' })];
-		const storage = stubLocalStorage({ en_notes: JSON.stringify(legacy) });
-		await initStore();
-		expect(getNotes()).toEqual(legacy);
-		expect(storage.has('en_notes')).toBe(false); // migrated once, then removed
-	});
-
-	it('starts empty without any stored state', async () => {
-		stubLocalStorage();
+	// no indexedDB in the node test environment: the store runs memory-only,
+	// which is exactly the fallback path it must support anyway
+	it('starts empty without indexedDB', async () => {
 		await initStore();
 		expect(getNotes()).toEqual([]);
 	});
