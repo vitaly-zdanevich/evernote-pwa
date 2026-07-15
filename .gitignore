@@ -4,3 +4,10 @@ coverage/
 *.log
 .DS_Store
 .claude/
+.build/
+.tools/
+proxy/target/
+infra/terraform/.terraform/
+infra/terraform/terraform.tfstate
+infra/terraform/terraform.tfstate.backup
+infra/terraform/backend.tf

@@ -5,6 +5,7 @@ Minimal proof-of-concept PWA to view and edit your latest Evernote notes.
 **Live:** https://vitaly-zdanevich.github.io/evernote-pwa/
 
 - Loads the **10 latest edited** notes.
+- **Create notes** with the **+** button — works offline too; a new note reaches the server on its first edit, and untouched empty notes are quietly discarded.
 - Simple editor: note title plus **bold**/*italic* buttons that appear when text is selected.
 - **Syncs after every edit** (1 s debounce). Indicator dot: 🟠 orange = syncing, 🟢 green = synced, 🔴 red = failed (auto-retries).
 - **Offline**: the app shell is served by a service worker and note contents are cached locally; edits made offline upload when the connection returns.
@@ -21,7 +22,18 @@ Minimal proof-of-concept PWA to view and edit your latest Evernote notes.
 
 The Evernote API does not send `Access-Control-Allow-Origin` headers, so a browser page cannot call it directly — this is a hard platform limitation for any static-hosted client. The app stays 100 % client-side; you just need a dumb path-preserving proxy that adds CORS headers. Deploy your own (do **not** use a public CORS proxy: your token would pass through it).
 
-Cloudflare Worker example (free tier is plenty):
+### Option A: AWS Lambda in Rust (included)
+
+Free at this volume: the Lambda always-free tier is 1 M requests + 400 000 GB-seconds per month, and a personal notes app makes a few hundred sub-second 128 MB calls a day. The proxy lives in [`proxy/`](proxy/) (a ~150-line custom-runtime binary; CORS incl. the OPTIONS preflight is handled by the function URL itself, configured in [`infra/terraform/`](infra/terraform/)). It compiles for the native Lambda CPU: arm64 Graviton with `target-cpu=neoverse-n1`.
+
+```sh
+AWS_REGION=eu-central-1 ./scripts/deploy.sh    # build + terraform apply, prints the function URL
+./scripts/show-logs.sh                         # CloudWatch logs (SINCE=3d, --follow supported)
+```
+
+`ALLOWED_ORIGIN` (default `https://vitaly-zdanevich.github.io`) restricts which web origin may call the proxy; `PACKAGE_ONLY=1` just builds the ZIP; `TF_STATE_BUCKET` switches Terraform to an S3 backend.
+
+### Option B: Cloudflare Worker
 
 ```js
 const CORS = {
