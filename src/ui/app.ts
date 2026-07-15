@@ -363,7 +363,17 @@ function editorView(guid: string): HTMLElement {
 			}
 		});
 		editorBody = body;
+		hydrateTodos(body);
 		void hydrateMedia(body, guid);
+		// checkbox toggles: mirror the property to the attribute the
+		// serializer reads, then save like any other edit
+		body.addEventListener('change', (ev) => {
+			const box = ev.target as HTMLInputElement | null;
+			if (!box?.matches?.('input[data-en-todo]')) return;
+			if (box.checked) box.setAttribute('checked', 'checked');
+			else box.removeAttribute('checked');
+			scheduleSave();
+		});
 		const tagsInput = el('input', {
 			class: 'tagsinput',
 			type: 'text',
@@ -414,6 +424,18 @@ async function resourceObjectUrl(noteGuid: string, hash: string): Promise<string
 	return url;
 }
 
+/** en-todo -> real checkbox; the change listener on the body syncs it back. */
+function hydrateTodos(body: HTMLElement): void {
+	for (const todo of Array.from(body.querySelectorAll('en-todo'))) {
+		const box = el('input', { type: 'checkbox', 'data-en-todo': '', contenteditable: 'false' });
+		box.checked = /^true$/i.test(todo.getAttribute('checked') ?? '');
+		if (box.checked) box.setAttribute('checked', 'checked');
+		// the HTML parser nests the following inline content inside the
+		// unknown element; put it back beside the checkbox
+		todo.replaceWith(box, ...Array.from(todo.childNodes));
+	}
+}
+
 async function hydrateMedia(body: HTMLElement, noteGuid: string): Promise<void> {
 	for (const media of Array.from(body.querySelectorAll('en-media'))) {
 		const type = media.getAttribute('type') ?? '';
@@ -422,10 +444,13 @@ async function hydrateMedia(body: HTMLElement, noteGuid: string): Promise<void> 
 		try {
 			const url = await resourceObjectUrl(noteGuid, hash);
 			if (!media.isConnected) continue; // user navigated away or deleted it
+			// content the HTML parser nested inside the unknown element
+			// moves back out beside it
+			const swallowed = Array.from(media.childNodes);
 			if (type.startsWith('audio/')) {
 				// display-only player next to the (hidden) en-media, which is
 				// what actually round-trips; the class is stripped on save
-				media.after(el('audio', { controls: true, src: url, contenteditable: 'false' }));
+				media.after(el('audio', { controls: true, src: url, contenteditable: 'false' }), ...swallowed);
 				media.setAttribute('class', 'played');
 			} else {
 				const img = el('img', {
@@ -435,7 +460,7 @@ async function hydrateMedia(body: HTMLElement, noteGuid: string): Promise<void> 
 					width: media.getAttribute('width'),
 					height: media.getAttribute('height'),
 				});
-				media.replaceWith(img);
+				media.replaceWith(img, ...swallowed);
 			}
 		} catch {
 			// leave the dashed en-media placeholder; a reopen retries

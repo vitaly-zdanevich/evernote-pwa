@@ -262,3 +262,65 @@ describe('headings and links', () => {
 		expect(out).toContain('<a href="https://example.org/a?b=1">link</a>');
 	});
 });
+
+describe('lists', () => {
+	it('keeps bullet and numbered lists, nesting and numbering attributes', () => {
+		const tree = elem(
+			'div',
+			{},
+			elem(
+				'UL',
+				{},
+				elem('LI', {}, text('milk')),
+				elem('LI', {}, text('bread'), elem('UL', {}, elem('LI', {}, text('rye')))),
+			),
+			elem('OL', { start: '3', type: 'a' }, elem('LI', {}, text('third'))),
+		);
+		const out = htmlToEnml(tree);
+		expect(out).toContain('<ul><li>milk</li><li>bread<ul><li>rye</li></ul></li></ul>');
+		expect(out).toContain('<ol start="3" type="a"><li>third</li></ol>');
+	});
+});
+
+describe('checkboxes', () => {
+	it('turns checkbox stand-ins back into en-todo with their state', () => {
+		const tree = elem(
+			'div',
+			{},
+			elem('INPUT', { type: 'checkbox', 'data-en-todo': '', checked: 'checked' }),
+			text('done '),
+			elem('INPUT', { type: 'checkbox', 'data-en-todo': '' }),
+			text('todo'),
+		);
+		expect(htmlToEnml(tree)).toContain(
+			'<en-todo checked="true"/>done <en-todo/>todo',
+		);
+	});
+
+	it('drops inputs that are not en-todo stand-ins', () => {
+		const tree = elem('div', {}, elem('INPUT', { type: 'text', value: 'x' }), text('after'));
+		expect(htmlToEnml(tree)).toContain('<en-note>after</en-note>');
+	});
+
+	it('extracts en-todo markup from ENML', () => {
+		const enml =
+			'<?xml version="1.0"?><!DOCTYPE en-note SYSTEM "http://xml.evernote.com/pub/enml2.dtd">' +
+			'<en-note><div><en-todo checked="true"/>milk</div><div><en-todo/>bread</div></en-note>';
+		expect(enmlToHtml(enml).html).toBe('<div><en-todo checked="true"/>milk</div><div><en-todo/>bread</div>');
+	});
+});
+
+describe('EMPTY elements with parser-swallowed content', () => {
+	it('re-emits content nested inside en-todo and en-media as siblings', () => {
+		// what innerHTML parsing actually produces for '<en-todo/>milk'
+		const tree = elem(
+			'div',
+			{},
+			elem('EN-TODO', { checked: 'true' }, text('milk')),
+			elem('EN-MEDIA', { type: 'application/pdf', hash: 'ff' }, text(' report')),
+		);
+		expect(htmlToEnml(tree)).toContain(
+			'<en-todo checked="true"/>milk<en-media type="application/pdf" hash="ff"/> report',
+		);
+	});
+});

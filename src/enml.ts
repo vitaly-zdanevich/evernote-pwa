@@ -77,6 +77,13 @@ export interface XmlNode {
 const TEXT_NODE = 3;
 const ELEMENT_NODE = 1;
 
+/** The editor shows en-todo as real checkboxes; turn them back on save. */
+function serializeCheckbox(node: XmlNode): string {
+	// inputs are banned in ENML; only our en-todo stand-ins survive
+	if (attr(node, 'data-en-todo') === undefined) return '';
+	return attr(node, 'checked') !== undefined ? '<en-todo checked="true"/>' : '<en-todo/>';
+}
+
 /** The editor shows en-media images as <img>; turn them back on save. */
 function serializeImg(node: XmlNode): string {
 	const hash = attr(node, 'data-en-hash');
@@ -90,25 +97,34 @@ function serializeImg(node: XmlNode): string {
 	return out + '/>';
 }
 
+function attrString(node: XmlNode): string {
+	let out = '';
+	const attrs = node.attributes;
+	if (!attrs) return out;
+	for (let i = 0; i < attrs.length; i++) {
+		const name = attrs[i].name.toLowerCase();
+		if (BANNED_ATTRS.has(name) || name.startsWith('on') || name.startsWith('data-') || !XML_NAME.test(name)) {
+			continue;
+		}
+		out += ` ${name}="${escAttr(attrs[i].value)}"`;
+	}
+	return out;
+}
+
 function serializeNode(node: XmlNode): string {
 	if (node.nodeType === TEXT_NODE) return escText(node.data ?? '');
 	if (node.nodeType !== ELEMENT_NODE) return '';
 	const tag = node.nodeName.toLowerCase();
 	if (tag === 'img') return serializeImg(node);
+	if (tag === 'input') return serializeCheckbox(node);
 	if (BANNED_ELEMENTS.has(tag) || !XML_NAME.test(tag)) return '';
-	let out = '<' + tag;
-	const attrs = node.attributes;
-	if (attrs) {
-		for (let i = 0; i < attrs.length; i++) {
-			const name = attrs[i].name.toLowerCase();
-			if (BANNED_ATTRS.has(name) || name.startsWith('on') || name.startsWith('data-') || !XML_NAME.test(name)) {
-				continue;
-			}
-			out += ` ${name}="${escAttr(attrs[i].value)}"`;
-		}
+	// EMPTY per the DTD, but the HTML parser nests the following inline
+	// content inside unknown elements: emit that content as siblings
+	if (tag === 'en-media' || tag === 'en-todo') {
+		return `<${tag}${attrString(node)}/>` + serializeChildren(node);
 	}
 	const inner = serializeChildren(node);
-	return inner ? `${out}>${inner}</${tag}>` : out + '/>';
+	return inner ? `<${tag}${attrString(node)}>${inner}</${tag}>` : `<${tag}${attrString(node)}/>`;
 }
 
 export function serializeChildren(node: XmlNode): string {

@@ -196,6 +196,12 @@ a {
 	text-decoration: underline;
 }
 
+.body ul,
+.body ol {
+	margin: 6px 0;
+	padding-left: 24px;
+}
+
 .body img {
 	max-width: 100%;
 	height: auto;
@@ -283,6 +289,14 @@ en-media.played {
 	display: block;
 	width: 100%;
 	margin: 6px 0;
+}
+
+.body input[type='checkbox'] {
+	width: 18px;
+	height: 18px;
+	margin: 0 6px 0 0;
+	vertical-align: -4px;
+	accent-color: var(--accent);
 }
 
 .fmt {
