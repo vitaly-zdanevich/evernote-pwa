@@ -91,10 +91,15 @@ async function pendingResources(note: NoteRecord): Promise<api.NewResource[]> {
 	return out;
 }
 
-function clearUploaded(guid: string, sent: api.NewResource[]): void {
+function clearUploaded(guid: string, sent: api.NewResource[], sentNotebook?: string): void {
 	const done = new Set(sent.map((r) => r.hashHex));
-	const left = (getNote(guid)?.pendingResources ?? []).filter((h) => !done.has(h));
-	patchNote(guid, { pendingResources: left.length ? left : undefined });
+	const note = getNote(guid);
+	const left = (note?.pendingResources ?? []).filter((h) => !done.has(h));
+	patchNote(guid, {
+		pendingResources: left.length ? left : undefined,
+		// keep a move picked while the request was in flight
+		pendingNotebook: note?.pendingNotebook === sentNotebook ? undefined : note?.pendingNotebook,
+	});
 }
 
 /** Called by the editor after each (debounced) edit. */
@@ -114,6 +119,21 @@ export function tagsEdited(guid: string, tagNames: string[]): void {
 	void upload();
 }
 
+/** Called by the editor when a notebook is picked. */
+export function notebookEdited(guid: string, notebookGuid: string): void {
+	if (!notebookGuid) return;
+	revs.set(guid, (revs.get(guid) ?? 0) + 1);
+	patchNote(guid, {
+		notebookGuid,
+		pendingNotebook: notebookGuid,
+		dirty: true,
+		error: undefined,
+		updated: Date.now(),
+	});
+	emit();
+	void upload();
+}
+
 async function upload(): Promise<void> {
 	if (uploading) return;
 	uploading = true;
@@ -127,11 +147,17 @@ async function upload(): Promise<void> {
 			try {
 				const { url, token } = await session();
 				const added = await pendingResources(note);
+				const sentNotebook = note.pendingNotebook;
 				if (isLocalGuid(note.guid)) {
 					const created = await api.createNote(
 						url,
 						token,
-						{ title: note.title, content: note.enml as string, tagNames: note.tagNames },
+						{
+							title: note.title,
+							content: note.enml as string,
+							notebookGuid: sentNotebook,
+							tagNames: note.tagNames,
+						},
 						added,
 					);
 					// an edit made while the request was in flight keeps the note dirty
@@ -141,7 +167,7 @@ async function upload(): Promise<void> {
 					revs.delete(note.guid);
 					setLastUpdateCount(created.usn);
 					for (const cb of guidListeners) cb(note.guid, created.guid);
-					clearUploaded(created.guid, added);
+					clearUploaded(created.guid, added, sentNotebook);
 				} else {
 					const keepGuids = added.length
 						? await api.getNoteResourceGuids(url, token, note.guid)
@@ -153,12 +179,13 @@ async function upload(): Promise<void> {
 							guid: note.guid,
 							title: note.title,
 							content: note.enml as string,
+							notebookGuid: sentNotebook,
 							tagNames: note.tagNames,
 						},
 						{ keepGuids, added },
 					);
 					setLastUpdateCount(result.usn);
-					clearUploaded(note.guid, added);
+					clearUploaded(note.guid, added, sentNotebook);
 					if ((revs.get(note.guid) ?? 0) === sent) {
 						patchNote(note.guid, { dirty: false, updated: result.updated, error: undefined });
 					}

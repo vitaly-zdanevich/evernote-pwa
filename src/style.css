@@ -185,6 +185,20 @@ a {
 	padding: 0;
 }
 
+.nbselect {
+	appearance: none;
+	-webkit-appearance: none;
+	max-width: 45%;
+	border: 0;
+	background: none;
+	color: var(--muted);
+	font: inherit;
+	outline: none;
+	padding: 0;
+	margin-right: 8px;
+	text-overflow: ellipsis;
+}
+
 .body {
 	min-height: 70vh;
 	padding: 12px 12px 40vh; /* room to tap below short notes; scroll past the keyboard */

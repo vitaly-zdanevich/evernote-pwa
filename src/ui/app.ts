@@ -300,6 +300,29 @@ async function addPhoto(file: Blob): Promise<void> {
 	flushEditor(); // a photo is worth syncing immediately
 }
 
+/** Native select over the cached notebook names; picking one moves the note. */
+function notebookPicker(rec: store.NoteRecord): HTMLElement | null {
+	const notebooks = store.notebookList();
+	if (!notebooks.length) {
+		const name = store.notebookName(rec.notebookGuid);
+		return name ? el('span', {}, name + ' · ') : null;
+	}
+	const select = el('select', { class: 'nbselect', 'aria-label': 'Notebook' });
+	if (store.isLocalGuid(rec.guid) && !rec.pendingNotebook) {
+		select.append(el('option', { value: '', selected: true }, '(default notebook)'));
+	} else if (rec.notebookGuid && !notebooks.some((n) => n.guid === rec.notebookGuid)) {
+		// stale cache: keep the current notebook selectable
+		select.append(el('option', { value: rec.notebookGuid, selected: true }, store.notebookName(rec.notebookGuid) || 'Current notebook'));
+	}
+	for (const nb of notebooks) {
+		select.append(el('option', { value: nb.guid, selected: nb.guid === rec.notebookGuid }, nb.name));
+	}
+	select.addEventListener('change', () => {
+		if (editorGuid && select.value) sync.notebookEdited(editorGuid, select.value);
+	});
+	return select;
+}
+
 function editorView(guid: string): HTMLElement {
 	const rec = store.getNote(guid);
 	if (!rec) {
@@ -330,7 +353,6 @@ function editorView(guid: string): HTMLElement {
 		{ class: 'iconbtn', type: 'button', 'aria-label': 'Add photo', onclick: () => fileInput.click() },
 		'📷',
 	);
-	const notebook = store.notebookName(rec.notebookGuid);
 	let contextLine: HTMLElement;
 	let body: HTMLElement;
 	if (rec.enml === null) {
@@ -390,12 +412,7 @@ function editorView(guid: string): HTMLElement {
 		tagsInput.addEventListener('change', () => {
 			if (editorGuid) sync.tagsEdited(editorGuid, store.parseTags(tagsInput.value));
 		});
-		contextLine = el(
-			'div',
-			{ class: 'notemeta' },
-			notebook ? el('span', {}, notebook + ' · ') : null,
-			tagsInput,
-		);
+		contextLine = el('div', { class: 'notemeta' }, notebookPicker(rec), tagsInput);
 	}
 	return el(
 		'section',

@@ -166,6 +166,36 @@ describe('evernote api', () => {
 		expect(note.has(15)).toBe(false); // tags untouched -> field omitted
 	});
 
+	it('moves the note when notebookGuid is set, omits the field otherwise', async () => {
+		serve('updateNote', MSG_REPLY, (w) => {
+			w.field(T.STRUCT, 0);
+			w.stop();
+			w.stop();
+		});
+		await updateNote('https://x.test/ns', 'tok', {
+			guid: 'g',
+			title: 'T',
+			content: '<en-note/>',
+			notebookGuid: 'nb-target',
+		});
+		const note = sentArgs().args.get(2) as Map<number, unknown>;
+		expect(note.get(11)).toBe('nb-target');
+
+		serve('createNote', MSG_REPLY, (w) => {
+			w.field(T.STRUCT, 0);
+			w.field(T.STRING, 1).string('g2');
+			w.stop();
+			w.stop();
+		});
+		await createNote('https://x.test/ns', 'tok', {
+			title: 'N',
+			content: '<en-note/>',
+			notebookGuid: 'nb-new',
+		});
+		const created = sentArgs().args.get(2) as Map<number, unknown>;
+		expect(created.get(11)).toBe('nb-new');
+	});
+
 	it('replaces tags when tagNames is given, including clearing them', async () => {
 		serve('updateNote', MSG_REPLY, (w) => {
 			w.field(T.STRUCT, 0);

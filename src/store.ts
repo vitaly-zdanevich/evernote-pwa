@@ -36,6 +36,8 @@ export interface NoteRecord {
 	tagNames?: string[];
 	/** MD5 hex of images added locally, uploaded with the next note sync. */
 	pendingResources?: string[];
+	/** Notebook chosen on this device; sent (as a move) with the next sync. */
+	pendingNotebook?: string;
 }
 
 let db: IDBDatabase | null = null;
@@ -136,6 +138,13 @@ export function saveNames(names: Names): void {
 
 export function notebookName(guid?: string): string {
 	return (guid && getNames().notebooks[guid]) || '';
+}
+
+/** All known notebooks from the cached name map, for the picker. */
+export function notebookList(): { guid: string; name: string }[] {
+	return Object.entries(getNames().notebooks)
+		.map(([guid, name]) => ({ guid, name }))
+		.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export function tagNames(guids?: string[]): string[] {

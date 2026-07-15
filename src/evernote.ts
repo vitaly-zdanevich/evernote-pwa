@@ -297,7 +297,7 @@ export async function fetchResourceBlob(
 export async function createNote(
 	noteStoreUrl: string,
 	token: string,
-	note: { title: string; content: string; tagNames?: string[] },
+	note: { title: string; content: string; notebookGuid?: string; tagNames?: string[] },
 	resources: NewResource[] = [],
 ): Promise<{ guid: string; updated: number; usn: number }> {
 	const reply = await call(noteStoreUrl, 'createNote', (w) => {
@@ -305,6 +305,7 @@ export async function createNote(
 		w.field(T.STRUCT, 2); // Note, no guid yet
 		w.field(T.STRING, 2).string(note.title);
 		w.field(T.STRING, 3).string(note.content);
+		if (note.notebookGuid) w.field(T.STRING, 11).string(note.notebookGuid);
 		if (resources.length) writeResources(w, [], resources);
 		writeTagNames(w, note.tagNames);
 		w.stop();
@@ -327,7 +328,14 @@ export async function createNote(
 export async function updateNote(
 	noteStoreUrl: string,
 	token: string,
-	note: { guid: string; title: string; content: string; tagNames?: string[] },
+	note: {
+		guid: string;
+		title: string;
+		content: string;
+		/** Setting this moves the note; leave undefined to keep it in place. */
+		notebookGuid?: string;
+		tagNames?: string[];
+	},
 	resources?: { keepGuids: string[]; added: NewResource[] },
 ): Promise<{ updated: number; usn: number }> {
 	const reply = await call(noteStoreUrl, 'updateNote', (w) => {
@@ -336,6 +344,7 @@ export async function updateNote(
 		w.field(T.STRING, 1).string(note.guid);
 		w.field(T.STRING, 2).string(note.title);
 		w.field(T.STRING, 3).string(note.content);
+		if (note.notebookGuid) w.field(T.STRING, 11).string(note.notebookGuid);
 		if (resources?.added.length) writeResources(w, resources.keepGuids, resources.added);
 		writeTagNames(w, note.tagNames);
 		w.stop();
