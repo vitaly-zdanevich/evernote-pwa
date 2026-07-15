@@ -247,7 +247,7 @@ describe('audio players', () => {
 });
 
 describe('headings and links', () => {
-	it('keeps h1-h6 and anchors through the round trip', () => {
+	it('keeps h1-h4 and anchors through the round trip', () => {
 		const tree = elem(
 			'div',
 			{},
