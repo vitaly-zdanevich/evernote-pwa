@@ -8,6 +8,7 @@ Minimal proof-of-concept PWA to view and edit your latest Evernote notes.
 - **Create notes** with the **+** button — works offline too; a new note reaches the server on its first edit, and untouched empty notes are quietly discarded.
 - Simple editor: note title plus **bold**/*italic* buttons that appear when text is selected.
 - **Images** in notes are displayed, fetched lazily through the proxy and cached in IndexedDB for offline reopening; other attachment types show a placeholder and survive edits untouched.
+- **Tables** render with a visible cell grid (even old unstyled ones) and scroll horizontally when they are wider than the screen; they round-trip untouched on save, styles, colspans, colgroups and all.
 - **Add photos** with 📷 or by pasting: downscaled on-device to a ≤2048 px JPEG (which also keeps uploads under the Lambda 6 MB payload cap) and attached to the note as a resource.
 - Each note shows its **notebook and tags** in the list and the editor; **tags are editable** in the editor (comma-separated — missing tags are created by the server automatically, an empty field removes all tags).
 - **Pull to refresh** on the list; refreshes are cheap anyway — one `getSyncState` call skips the whole pull when nothing changed server-side.

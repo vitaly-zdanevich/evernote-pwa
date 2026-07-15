@@ -103,3 +103,97 @@ describe('htmlToEnml', () => {
 		expect(htmlToEnml(root)).toContain('<en-note>abc</en-note>');
 	});
 });
+
+describe('tables', () => {
+	it('extracts table markup from ENML for the editor', () => {
+		const enml =
+			'<?xml version="1.0"?><!DOCTYPE en-note SYSTEM "http://xml.evernote.com/pub/enml2.dtd">' +
+			'<en-note><table width="100%"><tr><td>a</td><td/></tr></table></en-note>';
+		expect(enmlToHtml(enml).html).toBe('<table width="100%"><tr><td>a</td><td/></tr></table>');
+	});
+
+	it('round-trips a browser-normalized table back to valid ENML', () => {
+		// contenteditable gives uppercase node names and an inserted TBODY
+		const tree = elem(
+			'div',
+			{},
+			elem(
+				'TABLE',
+				{ style: 'width:640px', border: '1' },
+				elem(
+					'TBODY',
+					{},
+					elem('TR', {}, elem('TD', { colspan: '2', style: 'background:#eee' }, text('Header'))),
+					elem('TR', {}, elem('TD', {}, text('a & b')), elem('TD', {})),
+				),
+			),
+		);
+		expect(htmlToEnml(tree)).toContain(
+			'<table style="width:640px" border="1"><tbody>' +
+				'<tr><td colspan="2" style="background:#eee">Header</td></tr>' +
+				'<tr><td>a &amp; b</td><td/></tr>' +
+				'</tbody></table>',
+		);
+	});
+
+	it('keeps caption and colgroup, self-closing the void col element', () => {
+		const tree = elem(
+			'div',
+			{},
+			elem(
+				'TABLE',
+				{},
+				elem('CAPTION', {}, text('Budget')),
+				elem('COLGROUP', {}, elem('COL', { width: '120' }), elem('COL', { width: '80' })),
+				elem('TBODY', {}, elem('TR', {}, elem('TD', {}, text('x')), elem('TD', {}, text('y')))),
+			),
+		);
+		const out = htmlToEnml(tree);
+		expect(out).toContain('<caption>Budget</caption>');
+		expect(out).toContain('<colgroup><col width="120"/><col width="80"/></colgroup>');
+	});
+
+	it('strips prohibited attributes from table parts but keeps layout ones', () => {
+		const tree = elem(
+			'div',
+			{},
+			elem(
+				'TABLE',
+				{ class: 'grid', cellpadding: '4' },
+				elem(
+					'TBODY',
+					{},
+					elem('TR', { class: 'row' }, elem('TD', { id: 'c1', rowspan: '2', valign: 'top' }, text('x'))),
+				),
+			),
+		);
+		const out = htmlToEnml(tree);
+		expect(out).toContain('<table cellpadding="4"><tbody><tr><td rowspan="2" valign="top">x</td></tr></tbody></table>');
+		expect(out).not.toContain('class');
+		expect(out).not.toContain('id=');
+	});
+
+	it('keeps the real Evernote 10 table shape intact', () => {
+		// desktop clients emit styled cells wrapping content in divs
+		const cellStyle = 'border: 1px solid rgb(211, 211, 211); padding: 10px;';
+		const tree = elem(
+			'div',
+			{},
+			elem(
+				'TABLE',
+				{ style: 'border-collapse: collapse; min-width: 100%;' },
+				elem('COLGROUP', {}, elem('COL', { style: 'width: 205px;' })),
+				elem(
+					'TBODY',
+					{},
+					elem('TR', {}, elem('TD', { style: cellStyle }, elem('DIV', {}, text('cell')))),
+				),
+			),
+		);
+		expect(htmlToEnml(tree)).toContain(
+			'<table style="border-collapse: collapse; min-width: 100%;">' +
+				'<colgroup><col style="width: 205px;"/></colgroup>' +
+				`<tbody><tr><td style="${cellStyle}"><div>cell</div></td></tr></tbody></table>`,
+		);
+	});
+});

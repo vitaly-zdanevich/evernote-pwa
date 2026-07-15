@@ -197,6 +197,23 @@ a {
 	height: auto;
 }
 
+/* tables: always show the grid; wide desktop tables scroll horizontally */
+.body table {
+	display: block;
+	max-width: 100%;
+	overflow-x: auto;
+	border-collapse: collapse;
+	margin: 8px 0;
+}
+
+.body th,
+.body td {
+	border: 1px solid var(--line);
+	padding: 4px 8px;
+	vertical-align: top;
+	text-align: left;
+}
+
 /* attachments and images that are still loading */
 en-media {
 	display: block;
