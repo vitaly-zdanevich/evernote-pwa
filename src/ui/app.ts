@@ -276,6 +276,66 @@ function flushEditor(): void {
 	sync.noteEdited(editorGuid, editorTitle.value.trim() || 'Untitled', enml);
 }
 
+const GITHUB_OWNER = 'vitaly-zdanevich';
+const GITHUB_REPO = 'evernote-pwa';
+const GITHUB_URL = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}`;
+
+interface GhCommit {
+	sha: string;
+	html_url: string;
+	commit: { message: string; committer?: { date?: string }; author?: { date?: string } };
+}
+
+/** package.json version at a given commit; raw.githubusercontent is CORS-open and not API-rate-limited. */
+async function versionAt(sha: string): Promise<string> {
+	try {
+		const res = await fetch(`https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/${sha}/package.json`);
+		if (!res.ok) return '';
+		const v = (JSON.parse(await res.text()) as { version?: string }).version;
+		return v ? `v${v}` : '';
+	} catch {
+		return '';
+	}
+}
+
+async function loadCommits(container: HTMLElement): Promise<void> {
+	try {
+		let commits: GhCommit[] | null = null;
+		let versions: string[] | null = null;
+		const cached = sessionStorage.getItem('en_commits');
+		if (cached) {
+			const parsed = JSON.parse(cached) as { ts: number; data: GhCommit[]; versions: string[] };
+			if (Date.now() - parsed.ts < 10 * 60 * 1000) {
+				commits = parsed.data;
+				versions = parsed.versions;
+			}
+		}
+		if (!commits || !versions) {
+			const res = await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/commits?per_page=10`);
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			commits = (await res.json()) as GhCommit[];
+			versions = await Promise.all(commits.map((c) => versionAt(c.sha)));
+			sessionStorage.setItem('en_commits', JSON.stringify({ ts: Date.now(), data: commits, versions }));
+		}
+		const ul = el('ul', { class: 'commits' });
+		commits.forEach((c, i) => {
+			const date = (c.commit.committer?.date ?? c.commit.author?.date ?? '').slice(0, 10);
+			const ver = versions?.[i] ? ` ${versions[i]}` : '';
+			ul.append(
+				el(
+					'li',
+					{},
+					el('a', { href: c.html_url, target: '_blank', rel: 'noopener' }, c.sha.slice(0, 7)),
+					`${ver} ${date} ${c.commit.message.split('\n')[0]}`,
+				),
+			);
+		});
+		clear(container).append(ul);
+	} catch {
+		clear(container).append(el('p', { class: 'hint' }, 'Could not load commits.'));
+	}
+}
+
 function settingsView(): HTMLElement {
 	const s = store.getSettings();
 	const token = el('input', {
@@ -304,6 +364,8 @@ function settingsView(): HTMLElement {
 		spellcheck: 'false',
 		'aria-label': 'API base URL',
 	});
+	const commitList = el('div', {}, el('p', { class: 'hint' }, 'Loading…'));
+	void loadCommits(commitList);
 	return el(
 		'section',
 		{ class: 'settings' },
@@ -337,11 +399,13 @@ function settingsView(): HTMLElement {
 			},
 			'Save',
 		),
+		el('label', {}, 'Last 10 commits'),
+		commitList,
 		el(
 			'p',
 			{ class: 'hint version' },
 			`v${__APP_VERSION__} · `,
-			el('a', { href: 'https://github.com/vitaly-zdanevich/evernote-pwa', target: '_blank', rel: 'noopener' }, 'source'),
+			el('a', { href: GITHUB_URL, target: '_blank', rel: 'noopener' }, 'source'),
 		),
 	);
 }

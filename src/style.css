@@ -268,3 +268,14 @@ en-media[type^='image/']::before {
 .version {
 	margin-top: 28px;
 }
+
+ul.commits {
+	margin: 8px 0 0;
+	padding-left: 18px;
+	font-size: 14px;
+}
+
+ul.commits li {
+	margin: 4px 0;
+	overflow-wrap: anywhere;
+}
