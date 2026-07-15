@@ -69,7 +69,10 @@ export class ThriftWriter {
 	}
 
 	string(s: string): this {
-		const b = new TextEncoder().encode(s);
+		return this.binary(new TextEncoder().encode(s));
+	}
+
+	binary(b: Uint8Array): this {
 		this.i32(b.length);
 		this.ensure(b.length);
 		this.buf.set(b, this.len);

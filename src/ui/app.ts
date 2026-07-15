@@ -129,7 +129,7 @@ function listView(): HTMLElement {
 		'section',
 		{},
 		header(
-			'Notes',
+			'',
 			false,
 			el('button', { class: 'iconbtn', type: 'button', 'aria-label': 'New note', onclick: newNote }, '+'),
 			el('button', { class: 'iconbtn', type: 'button', 'aria-label': 'Refresh', onclick: () => void sync.refresh() }, '↻'),
@@ -156,7 +156,9 @@ function listView(): HTMLElement {
 				),
 			),
 		),
-		hasToken && !notes.length && !err ? el('p', { class: 'hint' }, 'Loading your 10 latest notes…') : null,
+		hasToken && !notes.length && !err
+			? el('p', { class: 'hint' }, `Loading your ${store.MAX_NOTES} latest notes…`)
+			: null,
 	);
 }
 
@@ -220,8 +222,39 @@ function editorView(guid: string): HTMLElement {
 		body.innerHTML = parsed.html;
 		body.addEventListener('input', scheduleSave);
 		editorBody = body;
+		void hydrateImages(body, guid);
 	}
 	return el('section', { class: 'editor' }, header('', true, toolbar), editorTitle, body);
+}
+
+// hash -> object URL, cached for the session so reopening a note is instant
+const imageUrls = new Map<string, string>();
+
+async function hydrateImages(body: HTMLElement, noteGuid: string): Promise<void> {
+	for (const media of Array.from(body.querySelectorAll('en-media'))) {
+		const type = media.getAttribute('type') ?? '';
+		const hash = media.getAttribute('hash') ?? '';
+		if (!type.startsWith('image/') || !hash) continue; // other attachments stay placeholders
+		try {
+			let url = imageUrls.get(hash);
+			if (!url) {
+				const blob = await sync.fetchImage(noteGuid, hash);
+				url = URL.createObjectURL(blob);
+				imageUrls.set(hash, url);
+			}
+			if (!media.isConnected) continue; // user navigated away or deleted it
+			const img = el('img', {
+				src: url,
+				'data-en-hash': hash,
+				'data-en-type': type,
+				width: media.getAttribute('width'),
+				height: media.getAttribute('height'),
+			});
+			media.replaceWith(img);
+		} catch {
+			// leave the dashed en-media placeholder; a reopen retries
+		}
+	}
 }
 
 function scheduleSave(): void {
@@ -265,7 +298,7 @@ function settingsView(): HTMLElement {
 		class: 'field',
 		type: 'url',
 		value: s.apiBase,
-		placeholder: store.DEFAULT_API_BASE,
+		placeholder: 'https://your-cors-proxy.example',
 		autocapitalize: 'off',
 		autocorrect: 'off',
 		spellcheck: 'false',

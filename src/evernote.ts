@@ -145,6 +145,55 @@ export async function getNote(noteStoreUrl: string, token: string, guid: string)
 	};
 }
 
+function hexToBytes(hex: string): Uint8Array {
+	const out = new Uint8Array(hex.length >> 1);
+	for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+	return out;
+}
+
+/** NoteStore.getResourceByHash without data: maps an en-media hash to its resource. */
+export async function getResourceMeta(
+	noteStoreUrl: string,
+	token: string,
+	noteGuid: string,
+	hashHex: string,
+): Promise<{ guid: string; mime: string }> {
+	const reply = await call(noteStoreUrl, 'getResourceByHash', (w) => {
+		w.field(T.STRING, 1).string(token);
+		w.field(T.STRING, 2).string(noteGuid);
+		w.field(T.STRING, 3).binary(hexToBytes(hashHex));
+		w.field(T.BOOL, 4).bool(false); // withData
+		w.field(T.BOOL, 5).bool(false);
+		w.field(T.BOOL, 6).bool(false);
+	});
+	const resource = reply.get(0);
+	const guid = str(structField(resource, 1));
+	if (!guid) throw new EvernoteError('Resource not found for image');
+	return { guid, mime: str(structField(resource, 4)) ?? 'application/octet-stream' };
+}
+
+/**
+ * Downloads resource bytes over the shard web API — the documented way to
+ * read resource contents outside Thrift: POST auth=<token> to .../res/<guid>.
+ * The URL is derived from the note store URL, so it uses the same CORS proxy.
+ */
+export async function fetchResourceBlob(
+	noteStoreUrl: string,
+	token: string,
+	resourceGuid: string,
+	mime: string,
+): Promise<Blob> {
+	const url = noteStoreUrl.replace(/\/notestore$/, '/res/') + resourceGuid;
+	const res = await fetch(url, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+		body: 'auth=' + encodeURIComponent(token),
+	});
+	if (!res.ok) throw new EvernoteError(`Resource HTTP ${res.status}`);
+	// typed from the resource metadata: proxies may not relay the content type
+	return new Blob([await res.arrayBuffer()], { type: mime });
+}
+
 /** NoteStore.createNote; the server assigns the guid. */
 export async function createNote(
 	noteStoreUrl: string,

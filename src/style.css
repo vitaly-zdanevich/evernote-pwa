@@ -168,6 +168,32 @@ a {
 	word-wrap: break-word;
 }
 
+.body img {
+	max-width: 100%;
+	height: auto;
+}
+
+/* attachments and images that are still loading */
+en-media {
+	display: block;
+	min-height: 28px;
+	margin: 4px 0;
+	border: 1px dashed var(--line);
+	border-radius: 8px;
+}
+
+en-media::before {
+	content: 'attachment';
+	display: block;
+	padding: 4px 10px;
+	color: var(--muted);
+	font-size: 13px;
+}
+
+en-media[type^='image/']::before {
+	content: 'loading image…';
+}
+
 .fmt {
 	display: flex;
 	gap: 8px;

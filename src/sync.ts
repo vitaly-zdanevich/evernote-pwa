@@ -167,6 +167,13 @@ export async function refresh(): Promise<void> {
 	}
 }
 
+/** Resolves an en-media image to its bytes; used lazily by the editor. */
+export async function fetchImage(noteGuid: string, hashHex: string): Promise<Blob> {
+	const { url, token } = await session();
+	const meta = await api.getResourceMeta(url, token, noteGuid, hashHex);
+	return api.fetchResourceBlob(url, token, meta.guid, meta.mime);
+}
+
 export function init(): void {
 	addEventListener('online', () => {
 		void upload();

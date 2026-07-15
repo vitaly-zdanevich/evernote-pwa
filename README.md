@@ -4,9 +4,10 @@ Minimal proof-of-concept PWA to view and edit your latest Evernote notes.
 
 **Live:** https://vitaly-zdanevich.github.io/evernote-pwa/
 
-- Loads the **10 latest edited** notes.
+- Loads the **20 latest edited** notes.
 - **Create notes** with the **+** button — works offline too; a new note reaches the server on its first edit, and untouched empty notes are quietly discarded.
 - Simple editor: note title plus **bold**/*italic* buttons that appear when text is selected.
+- **Images** in notes are displayed, fetched lazily through the proxy; other attachment types show a placeholder and survive edits untouched.
 - **Syncs after every edit** (1 s debounce). Indicator dot: 🟠 orange = syncing, 🟢 green = synced, 🔴 red = failed (auto-retries).
 - **Offline**: the app shell is served by a service worker and note contents are cached locally; edits made offline upload when the connection returns.
 - Dark theme follows `prefers-color-scheme`, with a pure `#000` background (OLED-friendly).
@@ -66,7 +67,7 @@ Put the worker URL (e.g. `https://evernote-cors.example.workers.dev`) into **Set
 ```sh
 npm ci
 npm run dev        # Vite dev server; its proxy forwards /edam and /shard to Evernote,
-                   # so an empty API base URL (the dev default) works without a worker
+                   # so the empty API base URL default works without a worker in dev
 npm test           # vitest: Thrift protocol, EDAM decoding, ENML serializer, merge logic
 npm run lint
 npm run typecheck
@@ -82,7 +83,8 @@ CI runs lint, typecheck, tests and the build on every push and PR. A push to `ma
 
 - Last write wins — no conflict detection against a newer server copy.
 - Only guid/title/content are sent on update; Evernote keeps tags, resources and other note fields unchanged.
-- Attachments (`en-media`) are not rendered, but they round-trip untouched, and the ENML serializer strips anything the DTD prohibits so saves are never rejected.
+- Images are fetched per session (an offline reopen shows a placeholder until you are back online); images pasted into the editor are not uploaded and disappear on save.
+- Non-image attachments (`en-media`) are shown as placeholders and round-trip untouched; the ENML serializer strips anything the DTD prohibits so saves are never rejected.
 - Notes are cached in `localStorage`; the token lives there too, on your device only.
 
 ## iOS

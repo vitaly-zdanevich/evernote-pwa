@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { EvernoteError, createNote, fetchNoteStoreUrl, listNotes, updateNote } from '../src/evernote';
+import {
+	EvernoteError,
+	createNote,
+	fetchNoteStoreUrl,
+	fetchResourceBlob,
+	getResourceMeta,
+	listNotes,
+	updateNote,
+} from '../src/evernote';
 import { T, ThriftReader, ThriftWriter } from '../src/thrift';
 
 const MSG_REPLY = 2;
@@ -138,6 +146,44 @@ describe('evernote api', () => {
 		expect(note.has(1)).toBe(false); // no guid: the server assigns it
 		expect(note.get(2)).toBe('New');
 		expect(note.get(3)).toBe('<en-note/>');
+	});
+
+	it('maps an en-media hash to its resource with a binary hash argument', async () => {
+		serve('getResourceByHash', MSG_REPLY, (w) => {
+			w.field(T.STRUCT, 0);
+			w.field(T.STRING, 1).string('res-guid');
+			w.field(T.STRING, 4).string('image/png');
+			w.stop();
+			w.stop();
+		});
+
+		// ascii hex keeps the decoded request bytes readable in the assertion
+		const hex = Array.from('abcdefghijklmnop', (c) => c.charCodeAt(0).toString(16)).join('');
+		const meta = await getResourceMeta('https://x.test/ns', 'tok', 'note-guid', hex);
+		expect(meta).toEqual({ guid: 'res-guid', mime: 'image/png' });
+
+		const { name, args } = sentArgs();
+		expect(name).toBe('getResourceByHash');
+		expect(args.get(2)).toBe('note-guid');
+		expect(args.get(3)).toBe('abcdefghijklmnop'); // 16 raw md5 bytes
+		expect(args.get(4)).toBe(false); // withData: bytes come from /res/ instead
+	});
+
+	it('downloads resource bytes via the shard web API with form auth', async () => {
+		let request: { url: string; contentType: string; body: string } | null = null;
+		vi.stubGlobal('fetch', async (url: string, init: { headers: Record<string, string>; body: string }) => {
+			request = { url, contentType: init.headers['Content-Type'], body: init.body };
+			return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
+		});
+
+		const blob = await fetchResourceBlob('https://p.test/shard/s9/notestore', 'to&ken', 'res-1', 'image/gif');
+		expect(request).toEqual({
+			url: 'https://p.test/shard/s9/res/res-1',
+			contentType: 'application/x-www-form-urlencoded',
+			body: 'auth=to%26ken',
+		});
+		expect(blob.type).toBe('image/gif');
+		expect(blob.size).toBe(3);
 	});
 
 	it('reports HTTP failures', async () => {

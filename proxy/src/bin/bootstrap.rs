@@ -5,7 +5,7 @@ use std::env;
 use std::thread::sleep;
 use std::time::Duration;
 
-use evernote_cors_proxy::{Forwarded, handle};
+use evernote_cors_proxy::{DEFAULT_CONTENT_TYPE, Forwarded, handle};
 use reqwest::blocking::Client;
 use serde_json::Value;
 
@@ -51,17 +51,24 @@ fn main() {
 			.and_then(|text| serde_json::from_str(&text).ok())
 			.unwrap_or(Value::Null);
 
-		let response = handle(&event, |url, body| {
+		let response = handle(&event, |url, content_type, body| {
 			let sent = upstream
 				.post(url)
-				.header("Content-Type", "application/x-thrift")
+				.header("Content-Type", content_type)
 				.body(body.to_vec())
 				.send()
 				.map_err(|error| error.to_string())?;
 			let status = sent.status().as_u16();
+			let content_type = sent
+				.headers()
+				.get("Content-Type")
+				.and_then(|v| v.to_str().ok())
+				.unwrap_or(DEFAULT_CONTENT_TYPE)
+				.to_string();
 			let body = sent.bytes().map_err(|error| error.to_string())?;
 			Ok(Forwarded {
 				status,
+				content_type,
 				body: body.to_vec(),
 			})
 		});

@@ -35,6 +35,15 @@ const BANNED_ELEMENTS = new Set([
 ]);
 
 const BANNED_ATTRS = new Set(['id', 'class', 'accesskey', 'data', 'dynsrc', 'tabindex', 'contenteditable']);
+
+function attr(node: XmlNode, name: string): string | undefined {
+	const attrs = node.attributes;
+	if (!attrs) return undefined;
+	for (let i = 0; i < attrs.length; i++) {
+		if (attrs[i].name.toLowerCase() === name) return attrs[i].value;
+	}
+	return undefined;
+}
 const XML_NAME = /^[a-zA-Z_][a-zA-Z0-9_:.-]*$/;
 // eslint-disable-next-line no-control-regex
 const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g;
@@ -66,17 +75,33 @@ export interface XmlNode {
 const TEXT_NODE = 3;
 const ELEMENT_NODE = 1;
 
+/** The editor shows en-media images as <img>; turn them back on save. */
+function serializeImg(node: XmlNode): string {
+	const hash = attr(node, 'data-en-hash');
+	// pasted/foreign images cannot be uploaded as resources, so they are dropped
+	if (!hash) return '';
+	let out = `<en-media hash="${escAttr(hash)}" type="${escAttr(attr(node, 'data-en-type') ?? 'image/png')}"`;
+	for (const dim of ['width', 'height']) {
+		const value = attr(node, dim);
+		if (value) out += ` ${dim}="${escAttr(value)}"`;
+	}
+	return out + '/>';
+}
+
 function serializeNode(node: XmlNode): string {
 	if (node.nodeType === TEXT_NODE) return escText(node.data ?? '');
 	if (node.nodeType !== ELEMENT_NODE) return '';
 	const tag = node.nodeName.toLowerCase();
+	if (tag === 'img') return serializeImg(node);
 	if (BANNED_ELEMENTS.has(tag) || !XML_NAME.test(tag)) return '';
 	let out = '<' + tag;
 	const attrs = node.attributes;
 	if (attrs) {
 		for (let i = 0; i < attrs.length; i++) {
 			const name = attrs[i].name.toLowerCase();
-			if (BANNED_ATTRS.has(name) || name.startsWith('on') || !XML_NAME.test(name)) continue;
+			if (BANNED_ATTRS.has(name) || name.startsWith('on') || name.startsWith('data-') || !XML_NAME.test(name)) {
+				continue;
+			}
 			out += ` ${name}="${escAttr(attrs[i].value)}"`;
 		}
 	}

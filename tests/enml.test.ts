@@ -76,6 +76,28 @@ describe('htmlToEnml', () => {
 		expect(htmlToEnml(root)).toContain('a<br/>b<div/>');
 	});
 
+	it('turns hydrated images back into en-media and drops foreign images', () => {
+		const root = elem(
+			'div',
+			{},
+			elem('IMG', {
+				src: 'blob:https://x/123',
+				'data-en-hash': 'abc123',
+				'data-en-type': 'image/jpeg',
+				width: '640',
+			}),
+			elem('img', { src: 'https://elsewhere.example/x.png' }),
+		);
+		expect(htmlToEnml(root)).toContain(
+			'<en-note><en-media hash="abc123" type="image/jpeg" width="640"/></en-note>',
+		);
+	});
+
+	it('strips data- attributes from regular elements', () => {
+		const root = elem('div', {}, elem('div', { 'data-foo': 'x', style: 'color:red' }, text('hi')));
+		expect(htmlToEnml(root)).toContain('<div style="color:red">hi</div>');
+	});
+
 	it('drops XML-invalid control characters', () => {
 		const root = elem('div', {}, text('a\u0000b\u0007c'));
 		expect(htmlToEnml(root)).toContain('<en-note>abc</en-note>');

@@ -3,8 +3,7 @@
 
 import { EMPTY_ENML } from './enml';
 
-export const DEFAULT_API_BASE = 'https://www.evernote.com';
-export const MAX_NOTES = 10;
+export const MAX_NOTES = 20;
 
 const SETTINGS_KEY = 'en_settings';
 const NOTES_KEY = 'en_notes';
@@ -35,11 +34,10 @@ function readJson<T>(key: string, fallback: T): T {
 	}
 }
 
-// dev default is same-origin: the Vite dev server proxies /edam and /shard
-const defaultApiBase = import.meta.env.DEV ? '' : DEFAULT_API_BASE;
-
+// empty apiBase = same origin: the Vite dev server proxies /edam and /shard,
+// and a self-hosted copy can do the same behind its own reverse proxy
 export function getSettings(): Settings {
-	return { token: '', apiBase: defaultApiBase, ...readJson<Partial<Settings>>(SETTINGS_KEY, {}) };
+	return { token: '', apiBase: '', ...readJson<Partial<Settings>>(SETTINGS_KEY, {}) };
 }
 
 export function saveSettings(patch: Partial<Settings>): void {
