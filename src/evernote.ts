@@ -221,6 +221,16 @@ function writeResources(w: ThriftWriter, keepGuids: string[], added: NewResource
 	}
 }
 
+/**
+ * Note.tagNames (field 15): the server replaces the note's tags with tags
+ * of these names, creating missing ones. Left out entirely = unchanged.
+ */
+function writeTagNames(w: ThriftWriter, names: string[] | undefined): void {
+	if (!names) return;
+	w.field(T.LIST, 15).byte(T.STRING).i32(names.length);
+	for (const name of names) w.string(name);
+}
+
 /** Guids of the resources currently attached to a note (metadata only). */
 export async function getNoteResourceGuids(
 	noteStoreUrl: string,
@@ -287,7 +297,7 @@ export async function fetchResourceBlob(
 export async function createNote(
 	noteStoreUrl: string,
 	token: string,
-	note: { title: string; content: string },
+	note: { title: string; content: string; tagNames?: string[] },
 	resources: NewResource[] = [],
 ): Promise<{ guid: string; updated: number; usn: number }> {
 	const reply = await call(noteStoreUrl, 'createNote', (w) => {
@@ -296,6 +306,7 @@ export async function createNote(
 		w.field(T.STRING, 2).string(note.title);
 		w.field(T.STRING, 3).string(note.content);
 		if (resources.length) writeResources(w, [], resources);
+		writeTagNames(w, note.tagNames);
 		w.stop();
 	});
 	const n = reply.get(0);
@@ -316,7 +327,7 @@ export async function createNote(
 export async function updateNote(
 	noteStoreUrl: string,
 	token: string,
-	note: { guid: string; title: string; content: string },
+	note: { guid: string; title: string; content: string; tagNames?: string[] },
 	resources?: { keepGuids: string[]; added: NewResource[] },
 ): Promise<{ updated: number; usn: number }> {
 	const reply = await call(noteStoreUrl, 'updateNote', (w) => {
@@ -326,6 +337,7 @@ export async function updateNote(
 		w.field(T.STRING, 2).string(note.title);
 		w.field(T.STRING, 3).string(note.content);
 		if (resources?.added.length) writeResources(w, resources.keepGuids, resources.added);
+		writeTagNames(w, note.tagNames);
 		w.stop();
 	});
 	const n = reply.get(0);

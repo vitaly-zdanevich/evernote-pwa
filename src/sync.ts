@@ -106,6 +106,14 @@ export function noteEdited(guid: string, title: string, enml: string): void {
 	void upload();
 }
 
+/** Called by the editor when the tags input is committed. */
+export function tagsEdited(guid: string, tagNames: string[]): void {
+	revs.set(guid, (revs.get(guid) ?? 0) + 1);
+	patchNote(guid, { tagNames, dirty: true, error: undefined, updated: Date.now() });
+	emit();
+	void upload();
+}
+
 async function upload(): Promise<void> {
 	if (uploading) return;
 	uploading = true;
@@ -123,7 +131,7 @@ async function upload(): Promise<void> {
 					const created = await api.createNote(
 						url,
 						token,
-						{ title: note.title, content: note.enml as string },
+						{ title: note.title, content: note.enml as string, tagNames: note.tagNames },
 						added,
 					);
 					// an edit made while the request was in flight keeps the note dirty
@@ -141,7 +149,12 @@ async function upload(): Promise<void> {
 					const result = await api.updateNote(
 						url,
 						token,
-						{ guid: note.guid, title: note.title, content: note.enml as string },
+						{
+							guid: note.guid,
+							title: note.title,
+							content: note.enml as string,
+							tagNames: note.tagNames,
+						},
 						{ keepGuids, added },
 					);
 					setLastUpdateCount(result.usn);

@@ -7,6 +7,7 @@ import {
 	initStore,
 	isLocalGuid,
 	mergeNotes,
+	parseTags,
 	patchNote,
 	saveNotes,
 } from '../src/store';
@@ -69,6 +70,27 @@ describe('mergeNotes', () => {
 		const local = [rec('local-abc', { dirty: false })];
 		const out = mergeNotes(local, [{ guid: 'b', title: 'B', updated: 1 }]);
 		expect(out.map((n) => n.guid)).toEqual(['b', 'local-abc']);
+	});
+
+	it('drops the local tag-name override once a pull confirms the note', () => {
+		const local = [rec('a', { tagNames: ['pending'] })];
+		const out = mergeNotes(local, [{ guid: 'a', title: 't-a', updated: 100, tagGuids: ['tg1'] }]);
+		expect(out[0].tagNames).toBeUndefined();
+		expect(out[0].tagGuids).toEqual(['tg1']);
+	});
+
+	it('keeps the tag-name override on dirty notes', () => {
+		const local = [rec('a', { dirty: true, tagNames: ['pending'] })];
+		const out = mergeNotes(local, [{ guid: 'a', title: 'x', updated: 999 }]);
+		expect(out[0].tagNames).toEqual(['pending']);
+	});
+});
+
+describe('parseTags', () => {
+	it('splits, trims, dedupes case-insensitively and drops empties', () => {
+		expect(parseTags(' summer,  family ,SUMMER,, dacha')).toEqual(['summer', 'family', 'dacha']);
+		expect(parseTags('')).toEqual([]);
+		expect(parseTags(' , , ')).toEqual([]);
 	});
 });
 

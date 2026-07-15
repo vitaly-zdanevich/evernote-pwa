@@ -163,6 +163,37 @@ describe('evernote api', () => {
 		expect(note.get(1)).toBe('g');
 		expect(note.get(2)).toBe('T');
 		expect(note.get(3)).toBe('<en-note>x</en-note>');
+		expect(note.has(15)).toBe(false); // tags untouched -> field omitted
+	});
+
+	it('replaces tags when tagNames is given, including clearing them', async () => {
+		serve('updateNote', MSG_REPLY, (w) => {
+			w.field(T.STRUCT, 0);
+			w.stop();
+			w.stop();
+		});
+		await updateNote('https://x.test/ns', 'tok', {
+			guid: 'g',
+			title: 'T',
+			content: '<en-note/>',
+			tagNames: ['summer', 'family'],
+		});
+		let note = sentArgs().args.get(2) as Map<number, unknown>;
+		expect(note.get(15)).toEqual(['summer', 'family']);
+
+		serve('updateNote', MSG_REPLY, (w) => {
+			w.field(T.STRUCT, 0);
+			w.stop();
+			w.stop();
+		});
+		await updateNote('https://x.test/ns', 'tok', {
+			guid: 'g',
+			title: 'T',
+			content: '<en-note/>',
+			tagNames: [],
+		});
+		note = sentArgs().args.get(2) as Map<number, unknown>;
+		expect(note.get(15)).toEqual([]); // empty list clears all tags
 	});
 
 	it('creates a note without sending a guid and returns the assigned one', async () => {

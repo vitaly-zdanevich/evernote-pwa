@@ -9,7 +9,7 @@ Minimal proof-of-concept PWA to view and edit your latest Evernote notes.
 - Simple editor: note title plus **bold**/*italic* buttons that appear when text is selected.
 - **Images** in notes are displayed, fetched lazily through the proxy and cached in IndexedDB for offline reopening; other attachment types show a placeholder and survive edits untouched.
 - **Add photos** with 📷 or by pasting: downscaled on-device to a ≤2048 px JPEG (which also keeps uploads under the Lambda 6 MB payload cap) and attached to the note as a resource.
-- Each note shows its **notebook and tags** (read-only) in the list and the editor.
+- Each note shows its **notebook and tags** in the list and the editor; **tags are editable** in the editor (comma-separated — missing tags are created by the server automatically, an empty field removes all tags).
 - **Pull to refresh** on the list; refreshes are cheap anyway — one `getSyncState` call skips the whole pull when nothing changed server-side.
 - **Syncs after every edit** (1 s debounce). Indicator dot: 🟠 orange = syncing, 🟢 green = synced, 🔴 red = failed (auto-retries).
 - **Offline**: the app shell is served by a service worker and note contents are cached locally; edits made offline upload when the connection returns.

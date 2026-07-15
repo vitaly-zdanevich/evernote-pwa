@@ -108,9 +108,13 @@ function header(title: string, back: boolean, ...actions: (Node | null)[]): HTML
 	);
 }
 
+function displayTags(n: store.NoteRecord): string[] {
+	return n.tagNames ?? store.tagNames(n.tagGuids);
+}
+
 /** "Notebook · tag1, tag2" — whatever parts the note has. */
 function noteContext(n: store.NoteRecord): string {
-	const parts = [store.notebookName(n.notebookGuid), store.tagNames(n.tagGuids).join(', ')];
+	const parts = [store.notebookName(n.notebookGuid), displayTags(n).join(', ')];
 	return parts.filter(Boolean).join(' · ');
 }
 
@@ -326,9 +330,14 @@ function editorView(guid: string): HTMLElement {
 		{ class: 'iconbtn', type: 'button', 'aria-label': 'Add photo', onclick: () => fileInput.click() },
 		'📷',
 	);
+	const notebook = store.notebookName(rec.notebookGuid);
+	let contextLine: HTMLElement;
 	let body: HTMLElement;
 	if (rec.enml === null) {
 		editorLoading = true;
+		// tags become editable once the content is here and syncing can work
+		const context = noteContext(rec);
+		contextLine = el('div', { class: 'notemeta' }, context);
 		body = el('div', { class: 'body hint' }, 'Loading…');
 	} else {
 		const parsed = enmlToHtml(rec.enml);
@@ -345,14 +354,35 @@ function editorView(guid: string): HTMLElement {
 		});
 		editorBody = body;
 		void hydrateImages(body, guid);
+		const tagsInput = el('input', {
+			class: 'tagsinput',
+			type: 'text',
+			value: displayTags(rec).join(', '),
+			placeholder: 'tags',
+			autocapitalize: 'off',
+			autocorrect: 'off',
+			spellcheck: 'false',
+			'aria-label': 'Tags, comma separated',
+		});
+		tagsInput.addEventListener('keydown', (e) => {
+			if ((e as KeyboardEvent).key === 'Enter') tagsInput.blur();
+		});
+		tagsInput.addEventListener('change', () => {
+			if (editorGuid) sync.tagsEdited(editorGuid, store.parseTags(tagsInput.value));
+		});
+		contextLine = el(
+			'div',
+			{ class: 'notemeta' },
+			notebook ? el('span', {}, notebook + ' · ') : null,
+			tagsInput,
+		);
 	}
-	const context = noteContext(rec);
 	return el(
 		'section',
 		{ class: 'editor' },
 		header('', true, toolbar, photoBtn, fileInput),
 		editorTitle,
-		context ? el('div', { class: 'notemeta' }, context) : null,
+		contextLine,
 		body,
 	);
 }

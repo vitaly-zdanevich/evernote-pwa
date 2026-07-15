@@ -28,6 +28,12 @@ export interface NoteRecord {
 	error?: string;
 	notebookGuid?: string;
 	tagGuids?: string[];
+	/**
+	 * Tag names as edited on this device; sent with the next sync (the
+	 * server creates missing tags) and shown until a pull confirms them.
+	 * undefined = tags untouched locally.
+	 */
+	tagNames?: string[];
 	/** MD5 hex of images added locally, uploaded with the next note sync. */
 	pendingResources?: string[];
 }
@@ -137,6 +143,21 @@ export function tagNames(guids?: string[]): string[] {
 	return (guids ?? []).map((g) => tags[g]).filter(Boolean);
 }
 
+/** Comma-separated user input -> clean tag names (EDAM forbids commas). */
+export function parseTags(input: string): string[] {
+	const out: string[] = [];
+	const seen = new Set<string>();
+	for (const raw of input.split(',')) {
+		const name = raw.trim().slice(0, 100);
+		const key = name.toLowerCase();
+		if (name && !seen.has(key)) {
+			seen.add(key);
+			out.push(name);
+		}
+	}
+	return out;
+}
+
 const UPDATE_COUNT_KEY = 'en_update_count';
 
 /** Account-wide change counter as of the last completed pull. */
@@ -240,7 +261,8 @@ export function mergeNotes(
 		const known = local.find((n) => n.guid === meta.guid);
 		if (!known) return { enml: null, dirty: false, ...meta };
 		if (known.dirty) return known;
-		return { ...known, ...meta, enml: meta.updated > known.updated ? null : known.enml };
+		// the pull's tagGuids are authoritative again: drop the local override
+		return { ...known, ...meta, tagNames: undefined, enml: meta.updated > known.updated ? null : known.enml };
 	});
 	const kept = new Set(merged.map((n) => n.guid));
 	return merged.concat(local.filter((n) => (n.dirty || isLocalGuid(n.guid)) && !kept.has(n.guid)));
