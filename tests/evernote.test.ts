@@ -5,6 +5,8 @@ import {
 	fetchNoteStoreUrl,
 	fetchResourceBlob,
 	getResourceMeta,
+	getUpdateCount,
+	listNotebooks,
 	listNotes,
 	updateNote,
 } from '../src/evernote';
@@ -65,6 +67,43 @@ describe('evernote api', () => {
 		const spec = args.get(5) as Map<number, unknown>;
 		expect(spec.get(2)).toBe(true); // includeTitle
 		expect(spec.get(7)).toBe(true); // includeUpdated
+		expect(spec.get(11)).toBe(true); // includeNotebookGuid
+		expect(spec.get(12)).toBe(true); // includeTagGuids
+	});
+
+	it('parses notebook and tag guids from the metadata', async () => {
+		serve('findNotesMetadata', MSG_REPLY, (w) => {
+			w.field(T.STRUCT, 0);
+			w.field(T.LIST, 3).byte(T.STRUCT).i32(1);
+			w.field(T.STRING, 1).string('g');
+			w.field(T.STRING, 11).string('nb-1');
+			w.field(T.LIST, 12).byte(T.STRING).i32(2);
+			w.string('tag-1').string('tag-2');
+			w.stop();
+			w.stop();
+			w.stop();
+		});
+		const notes = await listNotes('https://x.test/ns', 'tok', 20);
+		expect(notes[0]).toMatchObject({ guid: 'g', notebookGuid: 'nb-1', tagGuids: ['tag-1', 'tag-2'] });
+	});
+
+	it('lists notebooks and reads the sync state counter', async () => {
+		serve('listNotebooks', MSG_REPLY, (w) => {
+			w.field(T.LIST, 0).byte(T.STRUCT).i32(1);
+			w.field(T.STRING, 1).string('nb-1');
+			w.field(T.STRING, 2).string('Recipes');
+			w.stop();
+			w.stop();
+		});
+		expect(await listNotebooks('https://x.test/ns', 'tok')).toEqual([{ guid: 'nb-1', name: 'Recipes' }]);
+
+		serve('getSyncState', MSG_REPLY, (w) => {
+			w.field(T.STRUCT, 0);
+			w.field(T.I32, 3).i32(51234);
+			w.stop();
+			w.stop();
+		});
+		expect(await getUpdateCount('https://x.test/ns', 'tok')).toBe(51234);
 	});
 
 	it('maps EDAM exceptions to readable errors', async () => {
@@ -107,16 +146,17 @@ describe('evernote api', () => {
 		serve('updateNote', MSG_REPLY, (w) => {
 			w.field(T.STRUCT, 0);
 			w.field(T.I64, 7).i64(1800000000123);
+			w.field(T.I32, 10).i32(4212);
 			w.stop();
 			w.stop();
 		});
 
-		const updated = await updateNote('https://x.test/ns', 'tok', {
+		const result = await updateNote('https://x.test/ns', 'tok', {
 			guid: 'g',
 			title: 'T',
 			content: '<en-note>x</en-note>',
 		});
-		expect(updated).toBe(1800000000123);
+		expect(result).toEqual({ updated: 1800000000123, usn: 4212 });
 
 		const { args } = sentArgs();
 		const note = args.get(2) as Map<number, unknown>;
@@ -130,6 +170,7 @@ describe('evernote api', () => {
 			w.field(T.STRUCT, 0);
 			w.field(T.STRING, 1).string('server-guid');
 			w.field(T.I64, 7).i64(1800000000456);
+			w.field(T.I32, 10).i32(4213);
 			w.stop();
 			w.stop();
 		});
@@ -138,7 +179,7 @@ describe('evernote api', () => {
 			title: 'New',
 			content: '<en-note/>',
 		});
-		expect(created).toEqual({ guid: 'server-guid', updated: 1800000000456 });
+		expect(created).toEqual({ guid: 'server-guid', updated: 1800000000456, usn: 4213 });
 
 		const { name, args } = sentArgs();
 		expect(name).toBe('createNote');
@@ -184,6 +225,54 @@ describe('evernote api', () => {
 		});
 		expect(blob.type).toBe('image/gif');
 		expect(blob.size).toBe(3);
+	});
+
+	it('attaches new resources and keeps existing ones as guid stubs', async () => {
+		serve('updateNote', MSG_REPLY, (w) => {
+			w.field(T.STRUCT, 0);
+			w.stop();
+			w.stop();
+		});
+
+		const hex = Array.from('0123456789abcdef', (c) => c.charCodeAt(0).toString(16)).join('');
+		await updateNote(
+			'https://x.test/ns',
+			'tok',
+			{ guid: 'g', title: 'T', content: '<en-note/>' },
+			{
+				keepGuids: ['keep-1'],
+				added: [{ bytes: new TextEncoder().encode('img-bytes'), mime: 'image/jpeg', hashHex: hex }],
+			},
+		);
+
+		const { args } = sentArgs();
+		const note = args.get(2) as Map<number, unknown>;
+		const resources = note.get(13) as Map<number, unknown>[];
+		expect(resources).toHaveLength(2);
+		expect(resources[0].get(1)).toBe('keep-1'); // stub: guid only
+		expect(resources[0].has(3)).toBe(false);
+		const data = resources[1].get(3) as Map<number, unknown>;
+		expect(data.get(1)).toBe('0123456789abcdef'); // md5 bytes
+		expect(data.get(2)).toBe(9); // size
+		expect(data.get(3)).toBe('img-bytes');
+		expect(resources[1].get(4)).toBe('image/jpeg');
+	});
+
+	it('reads resource guids from a note', async () => {
+		serve('getNote', MSG_REPLY, (w) => {
+			w.field(T.STRUCT, 0);
+			w.field(T.LIST, 13).byte(T.STRUCT).i32(2);
+			w.field(T.STRING, 1).string('r-1');
+			w.stop();
+			w.field(T.STRING, 1).string('r-2');
+			w.stop();
+			w.stop();
+			w.stop();
+		});
+		const { getNoteResourceGuids } = await import('../src/evernote');
+		expect(await getNoteResourceGuids('https://x.test/ns', 'tok', 'g')).toEqual(['r-1', 'r-2']);
+		const { args } = sentArgs();
+		expect(args.get(3)).toBe(false); // withContent off: metadata is enough
 	});
 
 	it('reports HTTP failures', async () => {

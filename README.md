@@ -7,7 +7,10 @@ Minimal proof-of-concept PWA to view and edit your latest Evernote notes.
 - Loads the **20 latest edited** notes.
 - **Create notes** with the **+** button — works offline too; a new note reaches the server on its first edit, and untouched empty notes are quietly discarded.
 - Simple editor: note title plus **bold**/*italic* buttons that appear when text is selected.
-- **Images** in notes are displayed, fetched lazily through the proxy; other attachment types show a placeholder and survive edits untouched.
+- **Images** in notes are displayed, fetched lazily through the proxy and cached in IndexedDB for offline reopening; other attachment types show a placeholder and survive edits untouched.
+- **Add photos** with 📷 or by pasting: downscaled on-device to a ≤2048 px JPEG (which also keeps uploads under the Lambda 6 MB payload cap) and attached to the note as a resource.
+- Each note shows its **notebook and tags** (read-only) in the list and the editor.
+- **Pull to refresh** on the list; refreshes are cheap anyway — one `getSyncState` call skips the whole pull when nothing changed server-side.
 - **Syncs after every edit** (1 s debounce). Indicator dot: 🟠 orange = syncing, 🟢 green = synced, 🔴 red = failed (auto-retries).
 - **Offline**: the app shell is served by a service worker and note contents are cached locally; edits made offline upload when the connection returns.
 - Dark theme follows `prefers-color-scheme`, with a pure `#000` background (OLED-friendly).
@@ -83,9 +86,9 @@ CI runs lint, typecheck, tests and the build on every push and PR. A push to `ma
 
 - Last write wins — no conflict detection against a newer server copy.
 - Only guid/title/content are sent on update; Evernote keeps tags, resources and other note fields unchanged.
-- Images are fetched per session (an offline reopen shows a placeholder until you are back online); images pasted into the editor are not uploaded and disappear on save.
+- Adding a photo replaces the note's resource list (existing resources are re-sent as guid stubs, which the service keeps); a resource attached from another client in that same moment could be lost.
 - Non-image attachments (`en-media`) are shown as placeholders and round-trip untouched; the ENML serializer strips anything the DTD prohibits so saves are never rejected.
-- Notes are cached in `localStorage`; the token lives there too, on your device only.
+- Notes and images are cached in IndexedDB (images unreferenced by any cached note are pruned); the token lives in `localStorage`, on your device only.
 
 ## iOS
 

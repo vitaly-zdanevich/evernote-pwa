@@ -1,29 +1,51 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	applyCreatedGuid,
 	createLocalNote,
 	dropUntouchedLocalNotes,
 	getNotes,
+	initStore,
 	isLocalGuid,
 	mergeNotes,
 	patchNote,
+	saveNotes,
 } from '../src/store';
 import type { NoteRecord } from '../src/store';
 
-function stubLocalStorage(): void {
-	const m = new Map<string, string>();
+// no indexedDB in the node test environment: the store runs memory-only,
+// which is exactly the fallback path it must support anyway
+function stubLocalStorage(seed: Record<string, string> = {}): Map<string, string> {
+	const m = new Map<string, string>(Object.entries(seed));
 	vi.stubGlobal('localStorage', {
 		getItem: (k: string) => m.get(k) ?? null,
 		setItem: (k: string, v: string) => void m.set(k, String(v)),
 		removeItem: (k: string) => void m.delete(k),
 	});
+	return m;
 }
 
+beforeEach(() => saveNotes([]));
 afterEach(() => vi.unstubAllGlobals());
 
 function rec(guid: string, patch: Partial<NoteRecord> = {}): NoteRecord {
 	return { guid, title: 't-' + guid, updated: 100, enml: '<en-note/>', dirty: false, ...patch };
 }
+
+describe('initStore', () => {
+	it('migrates the legacy localStorage cache, keeping unsynced edits', async () => {
+		const legacy = [rec('a', { dirty: true, enml: '<en-note>pending</en-note>' })];
+		const storage = stubLocalStorage({ en_notes: JSON.stringify(legacy) });
+		await initStore();
+		expect(getNotes()).toEqual(legacy);
+		expect(storage.has('en_notes')).toBe(false); // migrated once, then removed
+	});
+
+	it('starts empty without any stored state', async () => {
+		stubLocalStorage();
+		await initStore();
+		expect(getNotes()).toEqual([]);
+	});
+});
 
 describe('mergeNotes', () => {
 	it('adds unknown server notes with content pending', () => {
@@ -33,7 +55,7 @@ describe('mergeNotes', () => {
 
 	it('keeps cached content when the server has nothing newer', () => {
 		const local = [rec('a', { updated: 100 })];
-		const out = mergeNotes(local, [{ guid: 'a', title: 'ignored', updated: 100 }]);
+		const out = mergeNotes(local, [{ guid: 'a', title: 't-a', updated: 100 }]);
 		expect(out).toEqual(local);
 	});
 
@@ -48,7 +70,7 @@ describe('mergeNotes', () => {
 		expect(out).toEqual(local);
 	});
 
-	it('keeps dirty notes that fell out of the latest-10 list, drops clean ones', () => {
+	it('keeps dirty notes that fell out of the latest list, drops clean ones', () => {
 		const local = [rec('gone-clean'), rec('gone-dirty', { dirty: true })];
 		const out = mergeNotes(local, [{ guid: 'b', title: 'B', updated: 1 }]);
 		expect(out.map((n) => n.guid)).toEqual(['b', 'gone-dirty']);
@@ -72,7 +94,6 @@ describe('mergeNotes', () => {
 
 describe('local note creation', () => {
 	it('creates an empty local note and prunes it when untouched', () => {
-		stubLocalStorage();
 		const rec = createLocalNote();
 		expect(isLocalGuid(rec.guid)).toBe(true);
 		expect(rec.dirty).toBe(false);
@@ -82,7 +103,6 @@ describe('local note creation', () => {
 	});
 
 	it('keeps a local note once it was edited', () => {
-		stubLocalStorage();
 		const rec = createLocalNote();
 		patchNote(rec.guid, { dirty: true, title: 'typed' });
 		dropUntouchedLocalNotes();

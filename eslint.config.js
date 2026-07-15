@@ -16,6 +16,7 @@ export default tseslint.config(
 				history: 'readonly',
 				localStorage: 'readonly',
 				sessionStorage: 'readonly',
+				indexedDB: 'readonly',
 				fetch: 'readonly',
 				console: 'readonly',
 				setTimeout: 'readonly',

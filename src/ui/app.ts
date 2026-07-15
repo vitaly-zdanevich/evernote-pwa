@@ -1,5 +1,6 @@
 import { enmlToHtml, htmlToEnml } from '../enml';
 import type { XmlNode } from '../enml';
+import { md5Hex } from '../md5';
 import * as store from '../store';
 import * as sync from '../sync';
 import { clear, el } from './dom';
@@ -7,6 +8,9 @@ import { clear, el } from './dom';
 const SAVE_DEBOUNCE_MS = 1000;
 
 let root: HTMLElement;
+
+/** Repaints the current view; set once initUi has run. */
+export let rerender: () => void = () => undefined;
 
 // editor state; reset on every route change
 let editorGuid = '';
@@ -26,6 +30,7 @@ export function initUi(): void {
 		if (document.hidden) flushEditor(); // persist before iOS suspends us
 	});
 	sync.onChange(onSyncChange);
+	rerender = render;
 	sync.onGuidChange((from, to) => {
 		// the note being edited just got its server guid
 		if (editorGuid === from) {
@@ -103,6 +108,12 @@ function header(title: string, back: boolean, ...actions: (Node | null)[]): HTML
 	);
 }
 
+/** "Notebook · tag1, tag2" — whatever parts the note has. */
+function noteContext(n: store.NoteRecord): string {
+	const parts = [store.notebookName(n.notebookGuid), store.tagNames(n.tagGuids).join(', ')];
+	return parts.filter(Boolean).join(' · ');
+}
+
 function fmtDate(ms: number): string {
 	const d = new Date(ms);
 	const now = new Date();
@@ -121,11 +132,52 @@ function newNote(): void {
 	location.hash = '#n/' + encodeURIComponent(rec.guid);
 }
 
+/** iOS standalone has no reload button; overscrolling the list re-syncs. */
+function attachPullToRefresh(section: HTMLElement): void {
+	const bar = el('div', { class: 'ptr' }, 'Pull to refresh');
+	section.append(bar);
+	let startY = 0;
+	let tracking = false;
+	let armed = false;
+	const opts = { passive: true };
+	section.addEventListener(
+		'touchstart',
+		(e) => {
+			tracking = window.scrollY <= 0;
+			armed = false;
+			startY = (e as TouchEvent).touches[0].clientY;
+		},
+		opts,
+	);
+	section.addEventListener(
+		'touchmove',
+		(e) => {
+			if (!tracking) return;
+			const delta = (e as TouchEvent).touches[0].clientY - startY;
+			armed = delta > 70 && window.scrollY <= 0;
+			bar.classList.toggle('show', delta > 20 && window.scrollY <= 0);
+			bar.classList.toggle('armed', armed);
+			bar.textContent = armed ? 'Release to refresh' : 'Pull to refresh';
+		},
+		opts,
+	);
+	section.addEventListener(
+		'touchend',
+		() => {
+			if (armed) void sync.refresh();
+			tracking = false;
+			armed = false;
+			bar.classList.remove('show', 'armed');
+		},
+		opts,
+	);
+}
+
 function listView(): HTMLElement {
 	const notes = [...store.getNotes()].sort((a, b) => b.updated - a.updated);
 	const err = sync.lastRefreshError();
 	const hasToken = Boolean(store.getSettings().token);
-	return el(
+	const section = el(
 		'section',
 		{},
 		header(
@@ -142,24 +194,32 @@ function listView(): HTMLElement {
 		el(
 			'ul',
 			{ class: 'notes' },
-			...notes.map((n) =>
-				el(
+			...notes.map((n) => {
+				const context = noteContext(n);
+				return el(
 					'li',
 					{},
 					el(
 						'a',
 						{ href: '#n/' + encodeURIComponent(n.guid) },
 						n.dirty || n.error ? dot(n.error ? 'error' : 'syncing') : null,
-						el('span', { class: 't' }, n.title || 'Untitled'),
+						el(
+							'div',
+							{ class: 'tw' },
+							el('div', { class: 't' }, n.title || 'Untitled'),
+							context ? el('div', { class: 'sub' }, context) : null,
+						),
 						el('span', { class: 'd' }, fmtDate(n.updated)),
 					),
-				),
-			),
+				);
+			}),
 		),
 		hasToken && !notes.length && !err
 			? el('p', { class: 'hint' }, `Loading your ${store.MAX_NOTES} latest notes…`)
 			: null,
 	);
+	attachPullToRefresh(section);
+	return section;
 }
 
 function fmtButton(label: string, cmd: string): HTMLElement {
@@ -192,6 +252,50 @@ function updateToolbar(): void {
 	}
 }
 
+/**
+ * Big camera photos become bounded JPEGs; small GIF/PNG/WebP keep their
+ * format (animation, transparency). Falls back to the original bytes when
+ * decoding fails.
+ */
+async function prepareImage(file: Blob): Promise<{ bytes: Uint8Array<ArrayBuffer>; mime: string }> {
+	const keepFormat = /image\/(gif|png|webp)/.test(file.type) && file.size < 1_500_000;
+	if (!keepFormat) {
+		try {
+			const bmp = await createImageBitmap(file);
+			const scale = Math.min(1, 2048 / Math.max(bmp.width, bmp.height));
+			const canvas = document.createElement('canvas');
+			canvas.width = Math.round(bmp.width * scale);
+			canvas.height = Math.round(bmp.height * scale);
+			const ctx = canvas.getContext('2d');
+			if (!ctx) throw new Error('no 2d context');
+			ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+			const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.82));
+			if (blob) return { bytes: new Uint8Array(await blob.arrayBuffer()), mime: 'image/jpeg' };
+		} catch {
+			// not decodable here; upload the original bytes
+		}
+	}
+	return { bytes: new Uint8Array(await file.arrayBuffer()), mime: file.type || 'application/octet-stream' };
+}
+
+async function addPhoto(file: Blob): Promise<void> {
+	if (!editorBody || !editorGuid) return;
+	const { bytes, mime } = await prepareImage(file);
+	const hash = md5Hex(bytes);
+	const blob = new Blob([bytes], { type: mime });
+	store.cacheImage(hash, blob);
+	if (!imageUrls.has(hash)) imageUrls.set(hash, URL.createObjectURL(blob));
+	const img = el('img', { src: imageUrls.get(hash), 'data-en-hash': hash, 'data-en-type': mime });
+	editorBody.append(el('div', {}, img));
+	const rec = store.getNote(editorGuid);
+	const pending = rec?.pendingResources ?? [];
+	if (!pending.includes(hash)) {
+		store.patchNote(editorGuid, { pendingResources: [...pending, hash] });
+	}
+	scheduleSave();
+	flushEditor(); // a photo is worth syncing immediately
+}
+
 function editorView(guid: string): HTMLElement {
 	const rec = store.getNote(guid);
 	if (!rec) {
@@ -211,6 +315,17 @@ function editorView(guid: string): HTMLElement {
 		setTimeout(() => t.focus(), 0); // after it is in the document
 	}
 	toolbar = el('div', { class: 'fmt' }, fmtButton('B', 'bold'), fmtButton('I', 'italic'));
+	const fileInput = el('input', { type: 'file', accept: 'image/*', hidden: true });
+	fileInput.addEventListener('change', () => {
+		const file = fileInput.files?.[0];
+		if (file) void addPhoto(file);
+		fileInput.value = '';
+	});
+	const photoBtn = el(
+		'button',
+		{ class: 'iconbtn', type: 'button', 'aria-label': 'Add photo', onclick: () => fileInput.click() },
+		'📷',
+	);
 	let body: HTMLElement;
 	if (rec.enml === null) {
 		editorLoading = true;
@@ -221,10 +336,25 @@ function editorView(guid: string): HTMLElement {
 		body = el('div', { class: 'body', contenteditable: 'true' });
 		body.innerHTML = parsed.html;
 		body.addEventListener('input', scheduleSave);
+		body.addEventListener('paste', (ev) => {
+			const file = (ev as ClipboardEvent).clipboardData?.files?.[0];
+			if (file && file.type.startsWith('image/')) {
+				ev.preventDefault();
+				void addPhoto(file);
+			}
+		});
 		editorBody = body;
 		void hydrateImages(body, guid);
 	}
-	return el('section', { class: 'editor' }, header('', true, toolbar), editorTitle, body);
+	const context = noteContext(rec);
+	return el(
+		'section',
+		{ class: 'editor' },
+		header('', true, toolbar, photoBtn, fileInput),
+		editorTitle,
+		context ? el('div', { class: 'notemeta' }, context) : null,
+		body,
+	);
 }
 
 // hash -> object URL, cached for the session so reopening a note is instant
@@ -238,7 +368,11 @@ async function hydrateImages(body: HTMLElement, noteGuid: string): Promise<void>
 		try {
 			let url = imageUrls.get(hash);
 			if (!url) {
-				const blob = await sync.fetchImage(noteGuid, hash);
+				let blob = await store.getCachedImage(hash);
+				if (!blob) {
+					blob = await sync.fetchImage(noteGuid, hash);
+					store.cacheImage(hash, blob);
+				}
 				url = URL.createObjectURL(blob);
 				imageUrls.set(hash, url);
 			}

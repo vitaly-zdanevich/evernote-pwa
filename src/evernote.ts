@@ -8,6 +8,13 @@ export interface NoteMeta {
 	guid: string;
 	title: string;
 	updated: number;
+	notebookGuid?: string;
+	tagGuids?: string[];
+}
+
+export interface NamedEntity {
+	guid: string;
+	name: string;
 }
 
 export interface Note extends NoteMeta {
@@ -113,17 +120,51 @@ export async function listNotes(
 		w.field(T.STRUCT, 5); // NotesMetadataResultSpec
 		w.field(T.BOOL, 2).bool(true); // includeTitle
 		w.field(T.BOOL, 7).bool(true); // includeUpdated
+		w.field(T.BOOL, 11).bool(true); // includeNotebookGuid
+		w.field(T.BOOL, 12).bool(true); // includeTagGuids
 		w.stop();
 	});
 	const notes = structField(reply.get(0), 3);
 	if (!Array.isArray(notes)) return [];
 	return notes
-		.map((n) => ({
-			guid: str(structField(n, 1)) ?? '',
-			title: str(structField(n, 2)) ?? 'Untitled',
-			updated: num(structField(n, 7)) ?? 0,
-		}))
+		.map((n) => {
+			const tags = structField(n, 12);
+			return {
+				guid: str(structField(n, 1)) ?? '',
+				title: str(structField(n, 2)) ?? 'Untitled',
+				updated: num(structField(n, 7)) ?? 0,
+				notebookGuid: str(structField(n, 11)),
+				tagGuids: Array.isArray(tags) ? tags.filter((t): t is string => typeof t === 'string') : undefined,
+			};
+		})
 		.filter((n) => n.guid);
+}
+
+async function listNamed(noteStoreUrl: string, token: string, method: string): Promise<NamedEntity[]> {
+	const reply = await call(noteStoreUrl, method, (w) => {
+		w.field(T.STRING, 1).string(token);
+	});
+	const list = reply.get(0);
+	if (!Array.isArray(list)) return [];
+	return list
+		.map((s) => ({ guid: str(structField(s, 1)) ?? '', name: str(structField(s, 2)) ?? '' }))
+		.filter((e) => e.guid && e.name);
+}
+
+export function listNotebooks(noteStoreUrl: string, token: string): Promise<NamedEntity[]> {
+	return listNamed(noteStoreUrl, token, 'listNotebooks');
+}
+
+export function listTags(noteStoreUrl: string, token: string): Promise<NamedEntity[]> {
+	return listNamed(noteStoreUrl, token, 'listTags');
+}
+
+/** NoteStore.getSyncState: the account-wide change counter, one tiny call. */
+export async function getUpdateCount(noteStoreUrl: string, token: string): Promise<number> {
+	const reply = await call(noteStoreUrl, 'getSyncState', (w) => {
+		w.field(T.STRING, 1).string(token);
+	});
+	return num(structField(reply.get(0), 3)) ?? -1;
 }
 
 /** NoteStore.getNote with content, without resource data. */
@@ -149,6 +190,54 @@ function hexToBytes(hex: string): Uint8Array {
 	const out = new Uint8Array(hex.length >> 1);
 	for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
 	return out;
+}
+
+/** An image the user added, to be attached to its note on the next sync. */
+export interface NewResource {
+	bytes: Uint8Array;
+	mime: string;
+	hashHex: string;
+}
+
+/**
+ * Note.resources (field 13). Sending the list REPLACES the note's resource
+ * set, so existing resources must ride along as guid-only stubs — the
+ * service keeps their data. New ones carry the full body.
+ */
+function writeResources(w: ThriftWriter, keepGuids: string[], added: NewResource[]): void {
+	w.field(T.LIST, 13).byte(T.STRUCT).i32(keepGuids.length + added.length);
+	for (const guid of keepGuids) {
+		w.field(T.STRING, 1).string(guid);
+		w.stop();
+	}
+	for (const r of added) {
+		w.field(T.STRUCT, 3); // Data
+		w.field(T.STRING, 1).binary(hexToBytes(r.hashHex)); // bodyHash
+		w.field(T.I32, 2).i32(r.bytes.length);
+		w.field(T.STRING, 3).binary(r.bytes);
+		w.stop();
+		w.field(T.STRING, 4).string(r.mime);
+		w.stop();
+	}
+}
+
+/** Guids of the resources currently attached to a note (metadata only). */
+export async function getNoteResourceGuids(
+	noteStoreUrl: string,
+	token: string,
+	guid: string,
+): Promise<string[]> {
+	const reply = await call(noteStoreUrl, 'getNote', (w) => {
+		w.field(T.STRING, 1).string(token);
+		w.field(T.STRING, 2).string(guid);
+		w.field(T.BOOL, 3).bool(false); // withContent
+		w.field(T.BOOL, 4).bool(false);
+		w.field(T.BOOL, 5).bool(false);
+		w.field(T.BOOL, 6).bool(false);
+	});
+	const resources = structField(reply.get(0), 13);
+	if (!Array.isArray(resources)) return [];
+	return resources.map((r) => str(structField(r, 1)) ?? '').filter(Boolean);
 }
 
 /** NoteStore.getResourceByHash without data: maps an en-media hash to its resource. */
@@ -199,37 +288,49 @@ export async function createNote(
 	noteStoreUrl: string,
 	token: string,
 	note: { title: string; content: string },
-): Promise<{ guid: string; updated: number }> {
+	resources: NewResource[] = [],
+): Promise<{ guid: string; updated: number; usn: number }> {
 	const reply = await call(noteStoreUrl, 'createNote', (w) => {
 		w.field(T.STRING, 1).string(token);
 		w.field(T.STRUCT, 2); // Note, no guid yet
 		w.field(T.STRING, 2).string(note.title);
 		w.field(T.STRING, 3).string(note.content);
+		if (resources.length) writeResources(w, [], resources);
 		w.stop();
 	});
 	const n = reply.get(0);
 	const guid = str(structField(n, 1));
 	if (!guid) throw new EvernoteError('Evernote returned no guid for the new note');
-	return { guid, updated: num(structField(n, 7)) ?? Date.now() };
+	return {
+		guid,
+		updated: num(structField(n, 7)) ?? Date.now(),
+		usn: num(structField(n, 10)) ?? 0,
+	};
 }
 
 /**
  * NoteStore.updateNote with only guid/title/content set: Evernote keeps
  * resources, tags and everything else unchanged for omitted fields.
- * Returns the new server-side `updated` timestamp.
+ * Returns the new server-side `updated` timestamp and sequence number.
  */
 export async function updateNote(
 	noteStoreUrl: string,
 	token: string,
 	note: { guid: string; title: string; content: string },
-): Promise<number> {
+	resources?: { keepGuids: string[]; added: NewResource[] },
+): Promise<{ updated: number; usn: number }> {
 	const reply = await call(noteStoreUrl, 'updateNote', (w) => {
 		w.field(T.STRING, 1).string(token);
 		w.field(T.STRUCT, 2); // Note
 		w.field(T.STRING, 1).string(note.guid);
 		w.field(T.STRING, 2).string(note.title);
 		w.field(T.STRING, 3).string(note.content);
+		if (resources?.added.length) writeResources(w, resources.keepGuids, resources.added);
 		w.stop();
 	});
-	return num(structField(reply.get(0), 7)) ?? Date.now();
+	const n = reply.get(0);
+	return {
+		updated: num(structField(n, 7)) ?? Date.now(),
+		usn: num(structField(n, 10)) ?? 0,
+	};
 }

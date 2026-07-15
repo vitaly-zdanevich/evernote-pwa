@@ -87,23 +87,10 @@ a {
 
 .dot.syncing {
 	background: var(--syncing);
-	animation: pulse 1.2s ease-in-out infinite;
 }
 
 .dot.error {
 	background: var(--error);
-}
-
-@keyframes pulse {
-	50% {
-		opacity: 0.35;
-	}
-}
-
-@media (prefers-reduced-motion: reduce) {
-	.dot.syncing {
-		animation: none;
-	}
 }
 
 .notes {
@@ -114,19 +101,36 @@ a {
 
 .notes a {
 	display: flex;
-	align-items: baseline;
+	align-items: center;
 	gap: 8px;
-	padding: 13px 12px;
+	padding: 11px 12px;
 	border-bottom: 1px solid var(--line);
 	color: var(--fg);
+}
+
+.notes .d {
+	align-self: flex-start;
+	padding-top: 2px;
 }
 
 .notes .dot {
 	align-self: center;
 }
 
-.notes .t {
+.notes .tw {
 	flex: 1;
+	min-width: 0;
+}
+
+.notes .t {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.notes .sub {
+	color: var(--muted);
+	font-size: 12px;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -159,6 +163,12 @@ a {
 	font-weight: 600;
 	padding: 10px 12px;
 	outline: none;
+}
+
+.notemeta {
+	padding: 6px 12px 0;
+	color: var(--muted);
+	font-size: 13px;
 }
 
 .body {
@@ -267,6 +277,29 @@ en-media[type^='image/']::before {
 
 .version {
 	margin-top: 28px;
+}
+
+.ptr {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	z-index: 2;
+	padding: calc(12px + env(safe-area-inset-top)) 0 12px;
+	text-align: center;
+	font-size: 13px;
+	color: var(--muted);
+	background: var(--bg);
+	display: none;
+	pointer-events: none;
+}
+
+.ptr.show {
+	display: block;
+}
+
+.ptr.armed {
+	color: var(--accent);
 }
 
 ul.commits {

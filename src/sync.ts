@@ -6,15 +6,22 @@ import * as api from './evernote';
 import {
 	MAX_NOTES,
 	applyCreatedGuid,
+	getCachedImage,
+	getLastUpdateCount,
+	getNote,
 	getNoteStoreUrl,
 	getNotes,
 	getSettings,
 	isLocalGuid,
 	mergeNotes,
 	patchNote,
+	pruneImages,
+	saveNames,
 	saveNotes,
+	setLastUpdateCount,
 	setNoteStoreUrl,
 } from './store';
+import type { NoteRecord } from './store';
 
 export type SyncState = 'synced' | 'syncing' | 'error';
 
@@ -73,6 +80,23 @@ async function session(): Promise<{ url: string; token: string }> {
 	return { url, token };
 }
 
+/** Bytes for the images awaiting upload with this note. */
+async function pendingResources(note: NoteRecord): Promise<api.NewResource[]> {
+	const out: api.NewResource[] = [];
+	for (const hashHex of note.pendingResources ?? []) {
+		const blob = await getCachedImage(hashHex);
+		// a missing blob (cleared site data) leaves a dangling en-media; skip it
+		if (blob) out.push({ bytes: new Uint8Array(await blob.arrayBuffer()), mime: blob.type, hashHex });
+	}
+	return out;
+}
+
+function clearUploaded(guid: string, sent: api.NewResource[]): void {
+	const done = new Set(sent.map((r) => r.hashHex));
+	const left = (getNote(guid)?.pendingResources ?? []).filter((h) => !done.has(h));
+	patchNote(guid, { pendingResources: left.length ? left : undefined });
+}
+
 /** Called by the editor after each (debounced) edit. */
 export function noteEdited(guid: string, title: string, enml: string): void {
 	revs.set(guid, (revs.get(guid) ?? 0) + 1);
@@ -94,25 +118,36 @@ async function upload(): Promise<void> {
 			const sent = revs.get(note.guid) ?? 0;
 			try {
 				const { url, token } = await session();
+				const added = await pendingResources(note);
 				if (isLocalGuid(note.guid)) {
-					const created = await api.createNote(url, token, {
-						title: note.title,
-						content: note.enml as string,
-					});
+					const created = await api.createNote(
+						url,
+						token,
+						{ title: note.title, content: note.enml as string },
+						added,
+					);
 					// an edit made while the request was in flight keeps the note dirty
 					const clean = (revs.get(note.guid) ?? 0) === sent;
 					saveNotes(applyCreatedGuid(getNotes(), note.guid, created, clean));
 					revs.set(created.guid, revs.get(note.guid) ?? 0);
 					revs.delete(note.guid);
+					setLastUpdateCount(created.usn);
 					for (const cb of guidListeners) cb(note.guid, created.guid);
+					clearUploaded(created.guid, added);
 				} else {
-					const updated = await api.updateNote(url, token, {
-						guid: note.guid,
-						title: note.title,
-						content: note.enml as string,
-					});
+					const keepGuids = added.length
+						? await api.getNoteResourceGuids(url, token, note.guid)
+						: [];
+					const result = await api.updateNote(
+						url,
+						token,
+						{ guid: note.guid, title: note.title, content: note.enml as string },
+						{ keepGuids, added },
+					);
+					setLastUpdateCount(result.usn);
+					clearUploaded(note.guid, added);
 					if ((revs.get(note.guid) ?? 0) === sent) {
-						patchNote(note.guid, { dirty: false, updated, error: undefined });
+						patchNote(note.guid, { dirty: false, updated: result.updated, error: undefined });
 					}
 				}
 			} catch (e) {
@@ -146,8 +181,21 @@ export async function refresh(): Promise<void> {
 	emit();
 	try {
 		const { url, token } = await session();
+		// one tiny call: skip the whole pull when nothing changed server-side
+		const count = await api.getUpdateCount(url, token);
+		const cacheComplete = getNotes().length > 0 && getNotes().every((n) => n.enml !== null);
+		if (count >= 0 && count === getLastUpdateCount() && cacheComplete) return;
 		const metas = await api.listNotes(url, token, MAX_NOTES);
 		saveNotes(mergeNotes(getNotes(), metas));
+		emit();
+		const [notebooks, tags] = await Promise.all([
+			api.listNotebooks(url, token),
+			api.listTags(url, token),
+		]);
+		saveNames({
+			notebooks: Object.fromEntries(notebooks.map((n) => [n.guid, n.name])),
+			tags: Object.fromEntries(tags.map((t) => [t.guid, t.name])),
+		});
 		emit();
 		for (const meta of getNotes()) {
 			if (meta.enml !== null) continue;
@@ -158,6 +206,8 @@ export async function refresh(): Promise<void> {
 			}
 			emit();
 		}
+		pruneImages();
+		setLastUpdateCount(count);
 	} catch (e) {
 		refreshError = message(e);
 		setNoteStoreUrl(''); // in case a stale shard URL is what failed
