@@ -197,3 +197,68 @@ describe('tables', () => {
 		);
 	});
 });
+
+describe('code blocks', () => {
+	it('preserves the -en-codeblock style marker exactly on round trip', () => {
+		const style =
+			'box-sizing: border-box; padding: 8px; font-family: Monaco, Menlo, Consolas, "Courier New", monospace;' +
+			' background-color: rgb(251, 250, 248);-en-codeblock:true;';
+		const tree = elem(
+			'div',
+			{},
+			elem('DIV', { style }, elem('DIV', {}, text('set -euo pipefail')), elem('DIV', {}, text('terraform apply'))),
+		);
+		const out = htmlToEnml(tree);
+		// the marker must survive byte-for-byte (other clients detect it), quotes escaped for XML
+		expect(out).toContain('-en-codeblock:true;');
+		expect(out).toContain('font-family: Monaco, Menlo, Consolas, &quot;Courier New&quot;, monospace;');
+		expect(out).toContain('<div>set -euo pipefail</div><div>terraform apply</div>');
+	});
+
+	it('extracts codeblock markup from ENML for the editor', () => {
+		const enml =
+			'<?xml version="1.0"?><!DOCTYPE en-note SYSTEM "http://xml.evernote.com/pub/enml2.dtd">' +
+			'<en-note><div style="-en-codeblock:true;"><div>x = 1</div></div><pre>fn main() {}</pre></en-note>';
+		expect(enmlToHtml(enml).html).toBe('<div style="-en-codeblock:true;"><div>x = 1</div></div><pre>fn main() {}</pre>');
+	});
+
+	it('keeps pre and code elements', () => {
+		const tree = elem('div', {}, elem('PRE', {}, text('a < b')), elem('P', {}, elem('CODE', {}, text('npm ci'))));
+		const out = htmlToEnml(tree);
+		expect(out).toContain('<pre>a &lt; b</pre>');
+		expect(out).toContain('<code>npm ci</code>');
+	});
+});
+
+describe('audio players', () => {
+	it('drops the display-only audio element but keeps its en-media on save', () => {
+		const tree = elem(
+			'div',
+			{},
+			elem('EN-MEDIA', { type: 'audio/wav', hash: 'ff00', class: 'played' }),
+			elem('AUDIO', { controls: '', src: 'blob:https://x/1', contenteditable: 'false' }),
+		);
+		const out = htmlToEnml(tree);
+		expect(out).toContain('<en-media type="audio/wav" hash="ff00"/>');
+		expect(out).not.toContain('audio>');
+		expect(out).not.toContain('blob:');
+		expect(out).not.toContain('class');
+	});
+});
+
+describe('headings and links', () => {
+	it('keeps h1-h6 and anchors through the round trip', () => {
+		const tree = elem(
+			'div',
+			{},
+			elem('H1', {}, text('Title')),
+			elem('H2', {}, text('Sub')),
+			elem('H3', {}, text('Third')),
+			elem('H4', {}, text('Fourth')),
+			elem('A', { href: 'https://example.org/a?b=1' }, text('link')),
+		);
+		const out = htmlToEnml(tree);
+		expect(out).toContain('<h1>Title</h1><h2>Sub</h2><h3>Third</h3><h4>Fourth</h4>');
+		expect(out).toContain('<a href="https://example.org/a?b=1">link</a>');
+	});
+});

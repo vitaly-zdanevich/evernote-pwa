@@ -352,8 +352,18 @@ function editorView(guid: string): HTMLElement {
 				void addPhoto(file);
 			}
 		});
+		// contenteditable swallows link clicks (they just move the caret)
+		body.addEventListener('click', (ev) => {
+			const target = ev.target as Element | null;
+			const link = target?.closest ? target.closest('a[href]') : null;
+			const href = link?.getAttribute('href') ?? '';
+			if (/^(https?:|mailto:|tel:)/i.test(href)) {
+				ev.preventDefault();
+				window.open(href, '_blank', 'noopener');
+			}
+		});
 		editorBody = body;
-		void hydrateImages(body, guid);
+		void hydrateMedia(body, guid);
 		const tagsInput = el('input', {
 			class: 'tagsinput',
 			type: 'text',
@@ -390,31 +400,43 @@ function editorView(guid: string): HTMLElement {
 // hash -> object URL, cached for the session so reopening a note is instant
 const imageUrls = new Map<string, string>();
 
-async function hydrateImages(body: HTMLElement, noteGuid: string): Promise<void> {
+/** Resource bytes as an object URL: session cache, then IndexedDB, then network. */
+async function resourceObjectUrl(noteGuid: string, hash: string): Promise<string> {
+	let url = imageUrls.get(hash);
+	if (url) return url;
+	let blob = await store.getCachedImage(hash);
+	if (!blob) {
+		blob = await sync.fetchImage(noteGuid, hash);
+		store.cacheImage(hash, blob);
+	}
+	url = URL.createObjectURL(blob);
+	imageUrls.set(hash, url);
+	return url;
+}
+
+async function hydrateMedia(body: HTMLElement, noteGuid: string): Promise<void> {
 	for (const media of Array.from(body.querySelectorAll('en-media'))) {
 		const type = media.getAttribute('type') ?? '';
 		const hash = media.getAttribute('hash') ?? '';
-		if (!type.startsWith('image/') || !hash) continue; // other attachments stay placeholders
+		if (!hash || !/^(image|audio)\//.test(type)) continue; // others stay placeholders
 		try {
-			let url = imageUrls.get(hash);
-			if (!url) {
-				let blob = await store.getCachedImage(hash);
-				if (!blob) {
-					blob = await sync.fetchImage(noteGuid, hash);
-					store.cacheImage(hash, blob);
-				}
-				url = URL.createObjectURL(blob);
-				imageUrls.set(hash, url);
-			}
+			const url = await resourceObjectUrl(noteGuid, hash);
 			if (!media.isConnected) continue; // user navigated away or deleted it
-			const img = el('img', {
-				src: url,
-				'data-en-hash': hash,
-				'data-en-type': type,
-				width: media.getAttribute('width'),
-				height: media.getAttribute('height'),
-			});
-			media.replaceWith(img);
+			if (type.startsWith('audio/')) {
+				// display-only player next to the (hidden) en-media, which is
+				// what actually round-trips; the class is stripped on save
+				media.after(el('audio', { controls: true, src: url, contenteditable: 'false' }));
+				media.setAttribute('class', 'played');
+			} else {
+				const img = el('img', {
+					src: url,
+					'data-en-hash': hash,
+					'data-en-type': type,
+					width: media.getAttribute('width'),
+					height: media.getAttribute('height'),
+				});
+				media.replaceWith(img);
+			}
 		} catch {
 			// leave the dashed en-media placeholder; a reopen retries
 		}

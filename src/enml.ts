@@ -25,13 +25,15 @@ export function enmlToHtml(enml: string): EnmlBody {
 }
 
 // Prohibited by the ENML DTD (should never appear in a contenteditable that
-// started from ENML, but dropping them beats a rejected sync).
+// started from ENML, but dropping them beats a rejected sync). audio/video
+// players are inserted by the editor for en-media playback and are
+// display-only: the en-media element itself stays and round-trips.
 const BANNED_ELEMENTS = new Set([
-	'applet', 'base', 'basefont', 'bgsound', 'blink', 'body', 'button', 'dir', 'embed',
-	'fieldset', 'form', 'frame', 'frameset', 'head', 'html', 'iframe', 'ilayer', 'input',
-	'isindex', 'label', 'layer', 'legend', 'link', 'marquee', 'menu', 'meta', 'noframes',
-	'noscript', 'object', 'optgroup', 'option', 'param', 'plaintext', 'script', 'select',
-	'style', 'textarea', 'xml',
+	'applet', 'audio', 'base', 'basefont', 'bgsound', 'blink', 'body', 'button', 'dir',
+	'embed', 'fieldset', 'form', 'frame', 'frameset', 'head', 'html', 'iframe', 'ilayer',
+	'input', 'isindex', 'label', 'layer', 'legend', 'link', 'marquee', 'menu', 'meta',
+	'noframes', 'noscript', 'object', 'optgroup', 'option', 'param', 'plaintext', 'script',
+	'select', 'source', 'style', 'textarea', 'track', 'video', 'xml',
 ]);
 
 const BANNED_ATTRS = new Set(['id', 'class', 'accesskey', 'data', 'dynsrc', 'tabindex', 'contenteditable']);

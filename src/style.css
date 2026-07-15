@@ -47,7 +47,7 @@ header {
 	border-bottom: 1px solid var(--line);
 }
 
-h1 {
+header h1 {
 	flex: 1;
 	margin: 0;
 	font-size: 20px;
@@ -192,6 +192,10 @@ a {
 	word-wrap: break-word;
 }
 
+.body a {
+	text-decoration: underline;
+}
+
 .body img {
 	max-width: 100%;
 	height: auto;
@@ -214,6 +218,37 @@ a {
 	text-align: left;
 }
 
+/* code: Evernote marks blocks with -en-codeblock inside the style attribute
+   and bakes in light colors, so ours must win over the inline styles */
+.body div[style*='-en-codeblock'],
+.body pre {
+	background: #2b2b2b !important;
+	color: #e8e8e8 !important;
+	border: 1px solid #3a3a3a !important;
+	border-radius: 6px !important;
+	padding: 8px 10px !important;
+	margin: 8px 0;
+	font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace !important;
+	font-size: 13px !important;
+	white-space: pre-wrap;
+	overflow-x: auto;
+}
+
+.body code {
+	background: #2b2b2b;
+	color: #e8e8e8;
+	border-radius: 4px;
+	padding: 1px 5px;
+	font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+	font-size: 13px;
+}
+
+.body pre code,
+.body div[style*='-en-codeblock'] code {
+	background: none;
+	padding: 0;
+}
+
 /* attachments and images that are still loading */
 en-media {
 	display: block;
@@ -233,6 +268,21 @@ en-media::before {
 
 en-media[type^='image/']::before {
 	content: 'loading image…';
+}
+
+en-media[type^='audio/']::before {
+	content: 'loading audio…';
+}
+
+/* the audio player inserted after it takes over */
+en-media.played {
+	display: none;
+}
+
+.body audio {
+	display: block;
+	width: 100%;
+	margin: 6px 0;
 }
 
 .fmt {

@@ -9,6 +9,9 @@ Minimal proof-of-concept PWA to view and edit your latest Evernote notes.
 - Simple editor: note title plus **bold**/*italic* buttons that appear when text is selected.
 - **Images** in notes are displayed, fetched lazily through the proxy and cached in IndexedDB for offline reopening; other attachment types show a placeholder and survive edits untouched.
 - **Tables** render with a visible cell grid (even old unstyled ones) and scroll horizontally when they are wider than the screen; they round-trip untouched on save, styles, colspans, colgroups and all.
+- **Code blocks** (Evernote's `-en-codeblock`, plus clipped `pre`/`code`) render dark-gray in monospace; the proprietary style marker round-trips byte-for-byte.
+- **Audio attachments** play in a native `<audio>` player (fetched and cached like images); the player is display-only and never touches the saved note.
+- **Links are tappable** (they open in a new tab — inside a contenteditable a plain click only moves the caret) and headings h1–h6 render normally.
 - **Add photos** with 📷 or by pasting: downscaled on-device to a ≤2048 px JPEG (which also keeps uploads under the Lambda 6 MB payload cap) and attached to the note as a resource.
 - Each note shows its **notebook and tags** in the list and the editor; **tags are editable** in the editor (comma-separated — missing tags are created by the server automatically, an empty field removes all tags).
 - **Pull to refresh** on the list; refreshes are cheap anyway — one `getSyncState` call skips the whole pull when nothing changed server-side.
