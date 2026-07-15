@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { EvernoteError, fetchNoteStoreUrl, listNotes, updateNote } from '../src/evernote';
+import { EvernoteError, createNote, fetchNoteStoreUrl, listNotes, updateNote } from '../src/evernote';
 import { T, ThriftReader, ThriftWriter } from '../src/thrift';
 
 const MSG_REPLY = 2;
@@ -115,6 +115,29 @@ describe('evernote api', () => {
 		expect(note.get(1)).toBe('g');
 		expect(note.get(2)).toBe('T');
 		expect(note.get(3)).toBe('<en-note>x</en-note>');
+	});
+
+	it('creates a note without sending a guid and returns the assigned one', async () => {
+		serve('createNote', MSG_REPLY, (w) => {
+			w.field(T.STRUCT, 0);
+			w.field(T.STRING, 1).string('server-guid');
+			w.field(T.I64, 7).i64(1800000000456);
+			w.stop();
+			w.stop();
+		});
+
+		const created = await createNote('https://x.test/ns', 'tok', {
+			title: 'New',
+			content: '<en-note/>',
+		});
+		expect(created).toEqual({ guid: 'server-guid', updated: 1800000000456 });
+
+		const { name, args } = sentArgs();
+		expect(name).toBe('createNote');
+		const note = args.get(2) as Map<number, unknown>;
+		expect(note.has(1)).toBe(false); // no guid: the server assigns it
+		expect(note.get(2)).toBe('New');
+		expect(note.get(3)).toBe('<en-note/>');
 	});
 
 	it('reports HTTP failures', async () => {

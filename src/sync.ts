@@ -5,9 +5,11 @@
 import * as api from './evernote';
 import {
 	MAX_NOTES,
+	applyCreatedGuid,
 	getNoteStoreUrl,
 	getNotes,
 	getSettings,
+	isLocalGuid,
 	mergeNotes,
 	patchNote,
 	saveNotes,
@@ -25,8 +27,15 @@ let refreshing = false;
 let refreshError = '';
 let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
+const guidListeners = new Set<(from: string, to: string) => void>();
+
 export function onChange(cb: () => void): void {
 	listeners.add(cb);
+}
+
+/** Fired when createNote replaces a local guid with the server one. */
+export function onGuidChange(cb: (from: string, to: string) => void): void {
+	guidListeners.add(cb);
 }
 
 function emit(): void {
@@ -67,7 +76,8 @@ async function session(): Promise<{ url: string; token: string }> {
 /** Called by the editor after each (debounced) edit. */
 export function noteEdited(guid: string, title: string, enml: string): void {
 	revs.set(guid, (revs.get(guid) ?? 0) + 1);
-	patchNote(guid, { title, enml, dirty: true, error: undefined });
+	// `updated` is bumped optimistically; the server value replaces it on sync
+	patchNote(guid, { title, enml, dirty: true, error: undefined, updated: Date.now() });
 	emit();
 	void upload();
 }
@@ -84,14 +94,26 @@ async function upload(): Promise<void> {
 			const sent = revs.get(note.guid) ?? 0;
 			try {
 				const { url, token } = await session();
-				const updated = await api.updateNote(url, token, {
-					guid: note.guid,
-					title: note.title,
-					content: note.enml as string,
-				});
-				// an edit made while the request was in flight keeps the note dirty
-				if ((revs.get(note.guid) ?? 0) === sent) {
-					patchNote(note.guid, { dirty: false, updated, error: undefined });
+				if (isLocalGuid(note.guid)) {
+					const created = await api.createNote(url, token, {
+						title: note.title,
+						content: note.enml as string,
+					});
+					// an edit made while the request was in flight keeps the note dirty
+					const clean = (revs.get(note.guid) ?? 0) === sent;
+					saveNotes(applyCreatedGuid(getNotes(), note.guid, created, clean));
+					revs.set(created.guid, revs.get(note.guid) ?? 0);
+					revs.delete(note.guid);
+					for (const cb of guidListeners) cb(note.guid, created.guid);
+				} else {
+					const updated = await api.updateNote(url, token, {
+						guid: note.guid,
+						title: note.title,
+						content: note.enml as string,
+					});
+					if ((revs.get(note.guid) ?? 0) === sent) {
+						patchNote(note.guid, { dirty: false, updated, error: undefined });
+					}
 				}
 			} catch (e) {
 				patchNote(note.guid, { error: message(e) });

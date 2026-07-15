@@ -1,6 +1,25 @@
-import { describe, expect, it } from 'vitest';
-import { mergeNotes } from '../src/store';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+	applyCreatedGuid,
+	createLocalNote,
+	dropUntouchedLocalNotes,
+	getNotes,
+	isLocalGuid,
+	mergeNotes,
+	patchNote,
+} from '../src/store';
 import type { NoteRecord } from '../src/store';
+
+function stubLocalStorage(): void {
+	const m = new Map<string, string>();
+	vi.stubGlobal('localStorage', {
+		getItem: (k: string) => m.get(k) ?? null,
+		setItem: (k: string, v: string) => void m.set(k, String(v)),
+		removeItem: (k: string) => void m.delete(k),
+	});
+}
+
+afterEach(() => vi.unstubAllGlobals());
 
 function rec(guid: string, patch: Partial<NoteRecord> = {}): NoteRecord {
 	return { guid, title: 't-' + guid, updated: 100, enml: '<en-note/>', dirty: false, ...patch };
@@ -42,5 +61,45 @@ describe('mergeNotes', () => {
 			{ guid: 'a', title: 'A', updated: 100 },
 		]);
 		expect(out.map((n) => n.guid)).toEqual(['b', 'a']);
+	});
+
+	it('keeps locally created notes the server does not know about', () => {
+		const local = [rec('local-abc', { dirty: false })];
+		const out = mergeNotes(local, [{ guid: 'b', title: 'B', updated: 1 }]);
+		expect(out.map((n) => n.guid)).toEqual(['b', 'local-abc']);
+	});
+});
+
+describe('local note creation', () => {
+	it('creates an empty local note and prunes it when untouched', () => {
+		stubLocalStorage();
+		const rec = createLocalNote();
+		expect(isLocalGuid(rec.guid)).toBe(true);
+		expect(rec.dirty).toBe(false);
+		expect(getNotes()).toHaveLength(1);
+		dropUntouchedLocalNotes();
+		expect(getNotes()).toHaveLength(0);
+	});
+
+	it('keeps a local note once it was edited', () => {
+		stubLocalStorage();
+		const rec = createLocalNote();
+		patchNote(rec.guid, { dirty: true, title: 'typed' });
+		dropUntouchedLocalNotes();
+		expect(getNotes()).toHaveLength(1);
+	});
+});
+
+describe('applyCreatedGuid', () => {
+	const created = { guid: 'server-1', updated: 500 };
+
+	it('swaps in the server guid and marks the note synced when clean', () => {
+		const out = applyCreatedGuid([rec('local-x', { dirty: true, updated: 5 })], 'local-x', created, true);
+		expect(out[0]).toMatchObject({ guid: 'server-1', dirty: false, updated: 500 });
+	});
+
+	it('keeps the note dirty when the user typed during the request', () => {
+		const out = applyCreatedGuid([rec('local-x', { dirty: true, updated: 5 })], 'local-x', created, false);
+		expect(out[0]).toMatchObject({ guid: 'server-1', dirty: true, updated: 5 });
 	});
 });

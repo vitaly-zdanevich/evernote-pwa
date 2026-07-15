@@ -6,6 +6,9 @@ const ENML_PROLOG =
 	'<?xml version="1.0" encoding="UTF-8"?>' +
 	'<!DOCTYPE en-note SYSTEM "http://xml.evernote.com/pub/enml2.dtd">';
 
+/** A new empty note: one paragraph so contenteditable shows a caret line. */
+export const EMPTY_ENML = ENML_PROLOG + '<en-note><div><br/></div></en-note>';
+
 export interface EnmlBody {
 	/** Raw attribute string of the original <en-note> tag, kept for round-trip. */
 	attrs: string;

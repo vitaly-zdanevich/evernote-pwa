@@ -1,6 +1,8 @@
 // localStorage persistence: settings, the note-store URL and the note cache.
 // Notes are cached with full ENML so the app opens and edits offline.
 
+import { EMPTY_ENML } from './enml';
+
 export const DEFAULT_API_BASE = 'https://www.evernote.com';
 export const MAX_NOTES = 10;
 
@@ -70,11 +72,54 @@ export function patchNote(guid: string, patch: Partial<NoteRecord>): void {
 	saveNotes(getNotes().map((n) => (n.guid === guid ? { ...n, ...patch } : n)));
 }
 
+/** Notes created on this device that the server does not know about yet. */
+export function isLocalGuid(guid: string): boolean {
+	return guid.startsWith('local-');
+}
+
+/** A new note; it stays local until its first edit reaches the server. */
+export function createLocalNote(): NoteRecord {
+	const rec: NoteRecord = {
+		guid: 'local-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+		title: '',
+		updated: Date.now(),
+		enml: EMPTY_ENML,
+		dirty: false,
+	};
+	saveNotes([rec, ...getNotes()]);
+	return rec;
+}
+
+/** New notes that were never edited are discarded, not synced. */
+export function dropUntouchedLocalNotes(): void {
+	const notes = getNotes();
+	const kept = notes.filter((n) => !(isLocalGuid(n.guid) && !n.dirty));
+	if (kept.length !== notes.length) saveNotes(kept);
+}
+
+/**
+ * The server assigned a real guid to a locally created note. `clean` is
+ * false when the user kept typing while createNote was in flight, so the
+ * newer content still needs an upload. Pure, tested.
+ */
+export function applyCreatedGuid(
+	list: NoteRecord[],
+	from: string,
+	created: { guid: string; updated: number },
+	clean: boolean,
+): NoteRecord[] {
+	return list.map((n) =>
+		n.guid === from
+			? { ...n, guid: created.guid, updated: clean ? created.updated : n.updated, dirty: !clean, error: undefined }
+			: n,
+	);
+}
+
 /**
  * Merge the server's latest-notes list into the local cache. Pure, tested.
  * - notes with unsynced local edits are kept as-is (their upload wins later);
  * - server-side newer notes drop their cached content so it is refetched;
- * - dirty notes that fell out of the server list are kept so they still sync.
+ * - dirty and locally created notes missing from the server list are kept.
  */
 export function mergeNotes(
 	local: NoteRecord[],
@@ -88,5 +133,5 @@ export function mergeNotes(
 		return known;
 	});
 	const kept = new Set(merged.map((n) => n.guid));
-	return merged.concat(local.filter((n) => n.dirty && !kept.has(n.guid)));
+	return merged.concat(local.filter((n) => (n.dirty || isLocalGuid(n.guid)) && !kept.has(n.guid)));
 }

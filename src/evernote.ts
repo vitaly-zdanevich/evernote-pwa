@@ -145,6 +145,25 @@ export async function getNote(noteStoreUrl: string, token: string, guid: string)
 	};
 }
 
+/** NoteStore.createNote; the server assigns the guid. */
+export async function createNote(
+	noteStoreUrl: string,
+	token: string,
+	note: { title: string; content: string },
+): Promise<{ guid: string; updated: number }> {
+	const reply = await call(noteStoreUrl, 'createNote', (w) => {
+		w.field(T.STRING, 1).string(token);
+		w.field(T.STRUCT, 2); // Note, no guid yet
+		w.field(T.STRING, 2).string(note.title);
+		w.field(T.STRING, 3).string(note.content);
+		w.stop();
+	});
+	const n = reply.get(0);
+	const guid = str(structField(n, 1));
+	if (!guid) throw new EvernoteError('Evernote returned no guid for the new note');
+	return { guid, updated: num(structField(n, 7)) ?? Date.now() };
+}
+
 /**
  * NoteStore.updateNote with only guid/title/content set: Evernote keeps
  * resources, tags and everything else unchanged for omitted fields.

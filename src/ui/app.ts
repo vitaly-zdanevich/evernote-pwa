@@ -26,6 +26,13 @@ export function initUi(): void {
 		if (document.hidden) flushEditor(); // persist before iOS suspends us
 	});
 	sync.onChange(onSyncChange);
+	sync.onGuidChange((from, to) => {
+		// the note being edited just got its server guid
+		if (editorGuid === from) {
+			editorGuid = to;
+			history.replaceState(null, '', '#n/' + encodeURIComponent(to));
+		}
+	});
 	render();
 }
 
@@ -41,6 +48,7 @@ function render(): void {
 	editorBody = editorTitle = toolbar = null;
 	editorLoading = false;
 	const r = route();
+	if (r.view === 'list') store.dropUntouchedLocalNotes();
 	clear(root);
 	if (r.view === 'editor') root.append(editorView(r.guid));
 	else if (r.view === 'settings') root.append(settingsView());
@@ -108,8 +116,13 @@ function fmtDate(ms: number): string {
 	});
 }
 
+function newNote(): void {
+	const rec = store.createLocalNote();
+	location.hash = '#n/' + encodeURIComponent(rec.guid);
+}
+
 function listView(): HTMLElement {
-	const notes = store.getNotes();
+	const notes = [...store.getNotes()].sort((a, b) => b.updated - a.updated);
 	const err = sync.lastRefreshError();
 	const hasToken = Boolean(store.getSettings().token);
 	return el(
@@ -118,6 +131,7 @@ function listView(): HTMLElement {
 		header(
 			'Notes',
 			false,
+			el('button', { class: 'iconbtn', type: 'button', 'aria-label': 'New note', onclick: newNote }, '+'),
 			el('button', { class: 'iconbtn', type: 'button', 'aria-label': 'Refresh', onclick: () => void sync.refresh() }, '↻'),
 			el('a', { class: 'iconbtn', href: '#settings', 'aria-label': 'Settings' }, '⚙'),
 		),
@@ -186,9 +200,14 @@ function editorView(guid: string): HTMLElement {
 		class: 'title',
 		type: 'text',
 		value: rec.title,
+		placeholder: 'Title',
 		'aria-label': 'Note title',
 		oninput: scheduleSave,
 	});
+	if (store.isLocalGuid(guid) && !rec.title && !rec.dirty) {
+		const t = editorTitle;
+		setTimeout(() => t.focus(), 0); // after it is in the document
+	}
 	toolbar = el('div', { class: 'fmt' }, fmtButton('B', 'bold'), fmtButton('I', 'italic'));
 	let body: HTMLElement;
 	if (rec.enml === null) {
