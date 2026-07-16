@@ -101,3 +101,19 @@ CI runs lint, typecheck, tests and the build on every push and PR. A push to `ma
 ## iOS
 
 Open the app in Safari → Share → **Add to Home Screen**. Standalone mode, launch splash screens and safe-area insets are set up; the dark theme uses pure black.
+
+## See my other Evernote related projects
+
+- [geeknote](https://github.com/vitaly-zdanevich/geeknote) - Evernote CLI in Python.
+- [reeknote](https://github.com/vitaly-zdanevich/reeknote) - Evernote CLI in Rust.
+- [nixnote2](https://github.com/vitaly-zdanevich/nixnote2) - GUI client in C++, storing notes in SQLite.
+- [evernote-linux-repackage](https://github.com/vitaly-zdanevich/evernote-linux-repackage) - the official Evernote client repackaged as a native Linux Electron bundle.
+- [bot_telegram_evernote](https://gitlab.com/vitaly-zdanevich/bot_telegram_evernote) - Telegram bot that searches notes and replies with their content.
+- [everpublich](https://github.com/vitaly-zdanevich/everpublich) - sync an Evernote notebook to a static Zola blog.
+- [evernote-calendar](https://github.com/vitaly-zdanevich/evernote-calendar) - calendar for Evernote Web inside Evernote Web.
+- [pinterest-saves-to-evernote](https://github.com/vitaly-zdanevich/pinterest-saves-to-evernote) - GitHub Action that saves Pinterest pins to Evernote.
+- [wikipedia_diffs_to_evernote](https://github.com/vitaly-zdanevich/wikipedia_diffs_to_evernote) - sync Wikipedia edits to Evernote notes.
+- [yandex-music-likes-to-evernote](https://github.com/vitaly-zdanevich/yandex-music-likes-to-evernote) - export liked Yandex Music tracks to Evernote notes.
+- [userstyle black and minimal](https://gitlab.com/vitaly-zdanevich-styles/evernote) - dark minimal theme for Evernote Web.
+- [evernote/hotkey](https://gitlab.com/vitaly-zdanevich-userscripts/evernote/hotkey) - userscript adding hotkeys to Evernote Web.
+- [evernote-direct-link-opening-without-you-are-leaving](https://gitlab.com/vitaly-zdanevich-userscripts/evernote/evernote-direct-link-opening-without-you-are-leaving) - userscript that opens note links directly.
