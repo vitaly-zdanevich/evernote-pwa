@@ -77,6 +77,9 @@ npm ci
 npm run dev        # Vite dev server; its proxy forwards /edam and /shard to Evernote,
                    # so the empty API base URL default works without a worker in dev
 npm test           # vitest: Thrift protocol, EDAM decoding, ENML serializer, merge logic
+npm run e2e        # Playwright against the real build: seeded IndexedDB fixtures, rendering
+                   # regressions (headings, checkboxes, tables, code blocks), a mocked-Thrift
+                   # sync round trip; chromium locally, chromium+webkit in CI
 npm run lint
 npm run typecheck
 npm run build      # minified dist/ + generated service worker

@@ -59,7 +59,15 @@ function openDb(): Promise<IDBDatabase> {
 			req.result.createObjectStore('notes', { keyPath: 'guid' });
 			req.result.createObjectStore('images');
 		};
-		req.onsuccess = () => resolve(req.result);
+		req.onsuccess = () => {
+			// another context (tab, test) may delete/upgrade the database;
+			// holding the connection open would block it forever
+			req.result.onversionchange = () => {
+				req.result.close();
+				db = null;
+			};
+			resolve(req.result);
+		};
 		req.onerror = () => reject(req.error);
 	});
 }

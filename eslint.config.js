@@ -30,6 +30,15 @@ export default tseslint.config(
 		},
 	},
 	{
+		files: ['e2e/**/*.ts', 'playwright.config.ts'],
+		languageOptions: {
+			globals: {
+				process: 'readonly',
+				Buffer: 'readonly',
+			},
+		},
+	},
+	{
 		files: ['scripts/**/*.mjs'],
 		languageOptions: {
 			globals: {
