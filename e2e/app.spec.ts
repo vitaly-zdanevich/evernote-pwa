@@ -56,9 +56,15 @@ async function seed(page: Page, data: Seed = {}): Promise<void> {
 				const del = indexedDB.deleteDatabase('enpwa');
 				del.onsuccess = del.onerror = del.onblocked = () => resolve(null);
 			});
+			// no fetch(data:) — WebKit rejects it; decode the base64 by hand
 			const blobs: [string, Blob][] = [];
 			for (const [hash, dataUrl] of Object.entries(s.images)) {
-				blobs.push([hash, await (await fetch(dataUrl)).blob()]);
+				const [meta, b64] = dataUrl.split(',');
+				const type = meta.slice(5, meta.indexOf(';'));
+				const bin = atob(b64);
+				const bytes = new Uint8Array(bin.length);
+				for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+				blobs.push([hash, new Blob([bytes], { type })]);
 			}
 			await new Promise((resolve, reject) => {
 				const open = indexedDB.open('enpwa', 1);
