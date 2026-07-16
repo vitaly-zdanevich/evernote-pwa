@@ -35,7 +35,6 @@ interface Seed {
 	notes?: SeedNote[];
 	names?: { notebooks: Record<string, string>; tags: Record<string, string> };
 	settings?: { token: string; apiBase: string };
-	images?: Record<string, string>;
 	extraLocalStorage?: Record<string, string>;
 }
 
@@ -56,16 +55,6 @@ async function seed(page: Page, data: Seed = {}): Promise<void> {
 				const del = indexedDB.deleteDatabase('enpwa');
 				del.onsuccess = del.onerror = del.onblocked = () => resolve(null);
 			});
-			// no fetch(data:) — WebKit rejects it; decode the base64 by hand
-			const blobs: [string, Blob][] = [];
-			for (const [hash, dataUrl] of Object.entries(s.images)) {
-				const [meta, b64] = dataUrl.split(',');
-				const type = meta.slice(5, meta.indexOf(';'));
-				const bin = atob(b64);
-				const bytes = new Uint8Array(bin.length);
-				for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-				blobs.push([hash, new Blob([bytes], { type })]);
-			}
 			await new Promise((resolve, reject) => {
 				const open = indexedDB.open('enpwa', 1);
 				open.onupgradeneeded = () => {
@@ -73,23 +62,21 @@ async function seed(page: Page, data: Seed = {}): Promise<void> {
 					open.result.createObjectStore('images');
 				};
 				open.onsuccess = () => {
-					const tx = open.result.transaction(['notes', 'images'], 'readwrite');
+					const tx = open.result.transaction('notes', 'readwrite');
 					s.notes.forEach((n, i) => tx.objectStore('notes').put({ ...n, order: i }));
-					for (const [hash, blob] of blobs) tx.objectStore('images').put(blob, hash);
 					tx.oncomplete = () => {
 						open.result.close();
 						resolve(null);
 					};
-					tx.onerror = () => reject(tx.error);
+					tx.onerror = () => reject(new Error(String(tx.error)));
 				};
-				open.onerror = () => reject(open.error);
+				open.onerror = () => reject(new Error(String(open.error)));
 			});
 		},
 		{
 			notes: data.notes ?? [],
 			names: data.names ?? { notebooks: {}, tags: {} },
 			settings: data.settings ?? { token: 'tok', apiBase: 'https://mock.test' },
-			images: data.images ?? {},
 			extraLocalStorage: data.extraLocalStorage ?? {},
 		},
 	);
@@ -201,10 +188,43 @@ test('editor renders every formatting kind we have regressed on', async ({ page 
 	await expect(page.locator('.tagsinput')).toHaveValue('summer');
 });
 
-test('images hydrate from the IndexedDB cache', async ({ page }) => {
+test('images hydrate through the resource pipeline', async ({ page }) => {
+	const png = Buffer.from(TINY_PNG.split(',')[1], 'base64');
+	await page.route('https://mock.test/**', async (route) => {
+		if (route.request().url().includes('/res/')) {
+			return route.fulfill({ contentType: 'image/png', body: png });
+		}
+		const data = route.request().postDataBuffer();
+		const r = new ThriftReader(new Uint8Array(data ?? Buffer.alloc(0)));
+		const { name } = r.messageBegin();
+		if (name === 'getResourceByHash') {
+			return route.fulfill({
+				contentType: 'application/x-thrift',
+				body: thriftReply('getResourceByHash', (w) => {
+					w.field(T.STRUCT, 0);
+					w.field(T.STRING, 1).string('res-1');
+					w.field(T.STRING, 4).string('image/png');
+					w.stop();
+					w.stop();
+				}),
+			});
+		}
+		return route.fulfill({
+			contentType: 'application/x-thrift',
+			body: thriftReply('getSyncState', (w) => {
+				w.field(T.STRUCT, 0);
+				w.field(T.I32, 3).i32(42);
+				w.stop();
+				w.stop();
+			}),
+		});
+	});
 	await seed(page, {
 		notes: [note('g1', 'Photo', '<div><en-media type="image/png" hash="aa11"/>caption</div>')],
-		images: { aa11: TINY_PNG },
+		extraLocalStorage: {
+			en_notestore_url: 'https://mock.test/shard/s1/notestore',
+			en_update_count: '42',
+		},
 	});
 	await page.goto('/#n/g1');
 	const img = page.locator('.body img[data-en-hash="aa11"]');
